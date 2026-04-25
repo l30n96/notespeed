@@ -380,9 +380,6 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
     <div class="cc cf">
       <span class="cl">Transposition · Instrument</span>
       <div class="chips" id="transpChips">
-        <div class="chip on" data-t="0">🎹 C Konzert</div>
-        <div class="chip" data-t="2">🎺 B♭ +2</div>
-        <div class="chip" data-t="9">🎷 E♭ +9</div>
         <div class="chip" data-t="3">🎙 Alt +3</div>
         <div class="chip" data-t="-2">🎙 Tenor −2</div>
       </div>
@@ -810,16 +807,16 @@ const ssDd  = document.getElementById('scaleDd');
 
 function renderDd(q) {
   q = (q || '').toLowerCase().trim();
-  const hits = SCALES.filter(s => !q || s.id.includes(q) || s.lbl.toLowerCase().includes(q)).slice(0,14);
+  const hits = SCALES.filter(s => !q || s.id.includes(q) || s.lbl.toLowerCase().includes(q));
   ssDd.innerHTML = hits.map(s => {
     const nn = Scale.get('C ' + s.id).notes.join('–') || '?';
     return `<div class="ss-opt${s.id===cfg.scale?' sel':''}" data-id="${s.id}">${s.lbl}<div class="np">C: ${nn}</div></div>`;
   }).join('');
   ssDd.classList.toggle('open', hits.length > 0);
 }
-ssInp.addEventListener('focus',  () => renderDd(ssInp.value));
+ssInp.addEventListener('focus',  () => { ssInp.select(); renderDd(''); });
 ssInp.addEventListener('input',  () => renderDd(ssInp.value));
-ssInp.addEventListener('blur',   () => setTimeout(() => ssDd.classList.remove('open'), 160));
+ssInp.addEventListener('blur',   () => setTimeout(() => { ssDd.classList.remove('open'); ssInp.value = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale; }, 160));
 ssDd.addEventListener('click', e => {
   const o = e.target.closest('.ss-opt'); if (!o) return;
   cfg.scale = o.dataset.id;
