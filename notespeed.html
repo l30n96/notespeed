@@ -1133,6 +1133,8 @@ let pitchBuf = null, rafId = null;
 const FFT_SZ = 2048, SIL_THRESH = 0.011;
 const HOLD_MS = 60;           // was 280 — now allows fast scale playing
 const SAME_DEBOUNCE_MS = 120; // prevent same note re-firing within 120ms
+const MIN_FREQ = 55;          // ~A1 — lowest expected note
+const MAX_FREQ = 2100;        // ~C7 — highest expected note
 
 let holdKey = null, holdT = 0, holdFired = false;
 let lastFiredKey = null, lastFiredT = 0;
@@ -1189,7 +1191,7 @@ function pitchLoop() {
   }
 
   const freq = yin(pitchBuf, audioCtx.sampleRate);
-  if (!freq || freq < 55 || freq > 2100) { holdKey = null; holdFired = false; return; }
+  if (!freq || freq < MIN_FREQ || freq > MAX_FREQ) { holdKey = null; holdFired = false; return; }
 
   const info = m2i(f2m(freq));
   const key  = info.name + info.oct;
@@ -1215,9 +1217,12 @@ function pitchLoop() {
 // ═══════════════════════════════════════════════════
 // MATCHING
 // ═══════════════════════════════════════════════════
+// Enharmonic equivalents for note matching.
+// Rare edge cases B#/Cb are included for completeness (e.g. some Tonal scale outputs).
 const ENH = {
   'C#':'Db','Db':'C#','D#':'Eb','Eb':'D#','F#':'Gb','Gb':'F#',
-  'G#':'Ab','Ab':'G#','A#':'Bb','Bb':'A#','B#':'C', 'Cb':'B',
+  'G#':'Ab','Ab':'G#','A#':'Bb','Bb':'A#',
+  'B#':'C', 'C':'B#', 'Cb':'B', 'B':'Cb', // theoretical edge cases
 };
 function matches(dn, do_, dm, exp) {
   const pc = dn === exp.name || ENH[dn] === exp.name || ENH[exp.name] === dn;
