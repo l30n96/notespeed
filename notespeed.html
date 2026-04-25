@@ -145,6 +145,18 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
 .dir-badge.dn{border-color:var(--gd);color:var(--gd)}
 .pool-badge{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;
   border:1px solid rgba(176,125,245,.35);color:var(--pu);flex-shrink:0}
+.transp-badge{font-family:var(--mono);font-size:9px;padding:2px 7px;border-radius:4px;
+  border:1px solid rgba(245,200,66,.35);color:var(--gd);flex-shrink:0}
+
+/* transpose stepper */
+.tp-row{display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap}
+.tp-btn{background:none;border:1.5px solid var(--b1);border-radius:6px;
+  color:var(--mut);font-family:var(--mono);font-size:15px;font-weight:700;
+  width:28px;height:28px;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;transition:all .11s;line-height:1;flex-shrink:0}
+.tp-btn:hover{border-color:var(--b2);color:var(--fg)}
+#tpVal{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ac);
+  min-width:96px;text-align:center}
 
 #staffDiv{flex:1;display:flex;align-items:center;justify-content:center;
   min-height:0;overflow:hidden}
@@ -362,6 +374,24 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
       </div>
     </div>
 
+    <!-- Transposition -->
+    <div class="cc cf">
+      <span class="cl">Transposition · Instrument</span>
+      <div class="chips" id="transpChips">
+        <div class="chip on" data-t="0">🎹 C Konzert</div>
+        <div class="chip" data-t="2">🎺 B♭ +2</div>
+        <div class="chip" data-t="9">🎷 E♭ +9</div>
+        <div class="chip" data-t="7">🎻 F +7</div>
+      </div>
+      <div class="tp-row">
+        <button class="tp-btn" id="tpMinus">−</button>
+        <span id="tpVal">0 Halbtöne</span>
+        <button class="tp-btn" id="tpPlus">+</button>
+        <span style="font-size:10px;color:var(--mut);font-family:var(--mono)">Manuell (−12 … +12)</span>
+      </div>
+      <div style="font-size:10px;color:var(--mut)">Noten auf dem Notenpult = geschriebene Noten · Mikrofon misst Konzertstimmung</div>
+    </div>
+
   </div>
   <button class="sbtn" id="startBtn">Los geht's</button>
 </div>
@@ -371,6 +401,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
   <span class="brand">NoteSpeed</span>
   <div class="tb lit" id="tbBadge">C major</div>
   <div class="tb" id="tbMode">↑ Skala</div>
+  <div class="tb" id="tbTransp" style="display:none">+2</div>
   <div class="abw"><div class="abf" id="accBar"></div></div>
   <span class="ts">Streak <span id="tStreak">0</span></span>
   <span class="ts">∑ <span id="tTotal">0</span></span>
@@ -388,6 +419,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
       <span class="dir-badge up" id="dirBadge">↑ AUF</span>
       <span class="ib-rhy" id="ibRhy" style="display:none"></span>
       <span class="pool-badge" id="poolBadge" style="display:none"></span>
+      <span class="transp-badge" id="transpBadge" style="display:none"></span>
     </div>
     <div id="staffDiv"></div>
     <div class="bottom-bar">
@@ -671,6 +703,7 @@ const cfg = {
   diff: 'easy',
   poolEnabled: false,
   scalePool: new Set(['major']),
+  transpose: 0,
 };
 
 // ═══════════════════════════════════════════════════
@@ -730,6 +763,51 @@ const lickRotator = {
     return `${done}/${total} gespielt · ${total - done} neu`;
   }
 };
+
+// ═══════════════════════════════════════════════════
+// TRANSPOSITION
+// written note = concert note + cfg.transpose semitones
+// The staff shows written notes; mic hears concert pitch; matching stays in concert
+// ═══════════════════════════════════════════════════
+const NOTE_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+const NOTE_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+
+function transposedNote(concertMidi) {
+  const m = Math.round(concertMidi + cfg.transpose);
+  // Positive transpositions (Bb, Eb instruments) naturally produce sharp keys → prefer sharps
+  // Negative transpositions → prefer flats
+  const names = cfg.transpose < 0 ? NOTE_FLAT : NOTE_SHARP;
+  return { name: names[((m % 12) + 12) % 12], oct: Math.floor(m / 12) - 1 };
+}
+
+function writtenRoot() {
+  if (cfg.transpose === 0) return cfg.root;
+  const m = (Note.midi(cfg.root + cfg.oct) ?? Note.midi(cfg.root + '4') ?? 60) + cfg.transpose;
+  const names = cfg.transpose < 0 ? NOTE_FLAT : NOTE_SHARP;
+  return names[((Math.round(m) % 12) + 12) % 12];
+}
+
+function transpLabel() {
+  if (cfg.transpose === 0) return '';
+  return (cfg.transpose > 0 ? '+' : '') + cfg.transpose + '½t';
+}
+
+function setTranspose(v) {
+  cfg.transpose = Math.max(-12, Math.min(12, v));
+  const abs = Math.abs(cfg.transpose);
+  document.getElementById('tpVal').textContent =
+    cfg.transpose === 0
+      ? '0 Halbtöne'
+      : (cfg.transpose > 0 ? '+' : '') + cfg.transpose + ' Halbton' + (abs !== 1 ? 'e' : '');
+  document.querySelectorAll('#transpChips .chip').forEach(c =>
+    c.classList.toggle('on', +c.dataset.t === cfg.transpose)
+  );
+}
+document.querySelectorAll('#transpChips .chip').forEach(c =>
+  c.addEventListener('click', () => setTranspose(+c.dataset.t))
+);
+document.getElementById('tpMinus').addEventListener('click', () => setTranspose(cfg.transpose - 1));
+document.getElementById('tpPlus').addEventListener('click',  () => setTranspose(cfg.transpose + 1));
 
 // ═══════════════════════════════════════════════════
 // SCALE SEARCH UI
@@ -1017,13 +1095,15 @@ function renderStaff(animate) {
       else if (g < seqIdx)             color = C_DONE;
 
       const { StaveNote, Dot, Accidental } = Vex.Flow;
-      const letter = n.name[0].toLowerCase();
-      const acc    = n.name.slice(1);
-      const key    = letter + acc + '/' + n.oct;
+      // Transpose concert midi → written note for display
+      const vn     = transposedNote(n.midi);
+      const letter = vn.name[0].toLowerCase();
+      const acc    = vn.name.slice(1);
+      const key    = letter + acc + '/' + vn.oct;
       const sn     = new StaveNote({ keys:[key], duration:n.dur, clef:'treble' });
       if (n.dots === 1) Dot.buildAndAttach([sn], { all:true });
       if (acc) {
-        const pitchKey = n.name + n.oct;
+        const pitchKey = vn.name + vn.oct;
         if (!barAccidentals[pitchKey]) {
           barAccidentals[pitchKey] = true;
           try { sn.addModifier(new Accidental(acc)); } catch(e) {}
@@ -1297,7 +1377,7 @@ function startRound() {
   // Info bar
   const lbl = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
   document.getElementById('ibMode').textContent = cfg.mode === 'scale' ? 'TONLEITER' : 'LICK';
-  document.getElementById('ibName').textContent = cfg.root + ' ' + lbl;
+  document.getElementById('ibName').textContent = writtenRoot() + ' ' + lbl;
 
   if (cfg.mode === 'lick' && curLick) {
     document.getElementById('ibDesc').textContent = curLick.desc;
@@ -1320,6 +1400,14 @@ function startRound() {
     } else {
       pb.style.display = 'none';
     }
+  }
+  // Transpose badge
+  const tb2 = document.getElementById('transpBadge');
+  if (cfg.transpose !== 0) {
+    tb2.textContent = transpLabel();
+    tb2.style.display = '';
+  } else {
+    tb2.style.display = 'none';
   }
 
   renderStaff(true); renderDots(); updateNH();
@@ -1355,8 +1443,9 @@ function updateNH() {
   if (!n) { document.getElementById('nextH').textContent = '✓ fertig'; return; }
   const dl = {q:'♩', h:'𝅗𝅥', '8':'♪', '16':'𝅘𝅥𝅯'}[n.dur] || '';
   const hz = n.midi ? Math.round(m2f(n.midi)) + 'Hz' : '';
+  const vn = transposedNote(n.midi);
   document.getElementById('nextH').textContent =
-    `${n.display}${n.oct} ${dl}${n.dots?'.':''} · ${hz} (${seqIdx+1}/${sequence.length})`;
+    `${vn.name}${vn.oct} ${dl}${n.dots?'.':''} · ${hz} (${seqIdx+1}/${sequence.length})`;
 }
 setInterval(updateStats, 800);
 
@@ -1369,12 +1458,16 @@ function startGame() {
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('backBtn').style.display = 'flex';
   const lbl = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
-  document.getElementById('tbBadge').textContent = cfg.root + ' ' + lbl;
+  document.getElementById('tbBadge').textContent = writtenRoot() + ' ' + lbl;
   document.getElementById('tbBadge').classList.add('lit');
   document.getElementById('tbMode').textContent =
     cfg.mode === 'scale'
       ? (cfg.dir === 'both' ? '↕' : cfg.dir === 'up' ? '↑' : '↓') + ' Skala'
       : '♩ Lick';
+  // Transpose badge in topbar
+  const tbT = document.getElementById('tbTransp');
+  if (cfg.transpose !== 0) { tbT.textContent = transpLabel(); tbT.style.display = ''; }
+  else { tbT.style.display = 'none'; }
   if (cfg.mode === 'lick') lickRotator.buildPool();
   updateStats();
   startRound();
