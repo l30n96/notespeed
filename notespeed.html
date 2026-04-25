@@ -389,7 +389,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
         <button class="tp-btn" id="tpPlus">+</button>
         <span style="font-size:10px;color:var(--mut);font-family:var(--mono)">Manuell (−12 … +12)</span>
       </div>
-      <div style="font-size:10px;color:var(--mut)">Noten auf dem Notenpult = geschriebene Noten · Mikrofon misst Konzertstimmung</div>
+      <div style="font-size:10px;color:var(--mut)">Noten auf dem Notenpult = Konzerttonhöhe (keine Verschiebung) · Mikrofon erkennt den tieferen Klang deines Instruments automatisch</div>
     </div>
 
   </div>
@@ -766,26 +766,12 @@ const lickRotator = {
 
 // ═══════════════════════════════════════════════════
 // TRANSPOSITION
-// written note = concert note + cfg.transpose semitones
-// The staff shows written notes; mic hears concert pitch; matching stays in concert
+// cfg.transpose = semitones the instrument sounds BELOW written (= concert offset)
+// Staff always shows concert-pitch notes.
+// Mic matching shifts the expected pitch by -cfg.transpose so that
+//   e.g. a Bb instrument player reading concert C and playing C
+//   produces a Bb in the mic, which is accepted as correct (60-2=58).
 // ═══════════════════════════════════════════════════
-const NOTE_SHARP = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-const NOTE_FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
-
-function transposedNote(concertMidi) {
-  const m = Math.round(concertMidi + cfg.transpose);
-  // Positive transpositions (Bb, Eb instruments) naturally produce sharp keys → prefer sharps
-  // Negative transpositions → prefer flats
-  const names = cfg.transpose < 0 ? NOTE_FLAT : NOTE_SHARP;
-  return { name: names[((m % 12) + 12) % 12], oct: Math.floor(m / 12) - 1 };
-}
-
-function writtenRoot() {
-  if (cfg.transpose === 0) return cfg.root;
-  const m = (Note.midi(cfg.root + cfg.oct) ?? Note.midi(cfg.root + '4') ?? 60) + cfg.transpose;
-  const names = cfg.transpose < 0 ? NOTE_FLAT : NOTE_SHARP;
-  return names[((Math.round(m) % 12) + 12) % 12];
-}
 
 function transpLabel() {
   if (cfg.transpose === 0) return '';
@@ -1095,15 +1081,14 @@ function renderStaff(animate) {
       else if (g < seqIdx)             color = C_DONE;
 
       const { StaveNote, Dot, Accidental } = Vex.Flow;
-      // Transpose concert midi → written note for display
-      const vn     = transposedNote(n.midi);
-      const letter = vn.name[0].toLowerCase();
-      const acc    = vn.name.slice(1);
-      const key    = letter + acc + '/' + vn.oct;
+      // Display concert-pitch notes; mic matching handles transposition
+      const letter = n.name[0].toLowerCase();
+      const acc    = n.name.slice(1);
+      const key    = letter + acc + '/' + n.oct;
       const sn     = new StaveNote({ keys:[key], duration:n.dur, clef:'treble' });
       if (n.dots === 1) Dot.buildAndAttach([sn], { all:true });
       if (acc) {
-        const pitchKey = vn.name + vn.oct;
+        const pitchKey = n.name + n.oct;
         if (!barAccidentals[pitchKey]) {
           barAccidentals[pitchKey] = true;
           try { sn.addModifier(new Accidental(acc)); } catch(e) {}
@@ -1191,11 +1176,12 @@ function yin(buf, sr, thr = 0.12) {
     tau++;
   }
   if (tau === H) return null;
-  // Parabolic interpolation for precision
+  // Parabolic interpolation for sub-sample precision
   let bt = tau;
   if (tau > 1 && tau < H - 1) {
     const s0 = c[tau-1], s1 = c[tau], s2 = c[tau+1];
-    bt = tau + (s2 - s0) / (2 * (2*s1 - s2 - s0));
+    const denom = 2 * (2*s1 - s2 - s0);
+    if (Math.abs(denom) > 1e-9) bt = tau + (s2 - s0) / denom;
   }
   return sr / bt;
 }
@@ -1286,7 +1272,7 @@ function pitchLoop() {
       if (key !== lastFiredKey || now - lastFiredT >= SAME_DEBOUNCE_MS) {
         lastFiredKey = key;
         lastFiredT   = now;
-        onNote(info.name, info.oct, Math.round(f2m(freq)));
+        onNote(info.name, info.oct, info.midi);
       }
     }
   } else {
@@ -1297,18 +1283,22 @@ function pitchLoop() {
 // ═══════════════════════════════════════════════════
 // MATCHING
 // ═══════════════════════════════════════════════════
-// Enharmonic equivalents for note matching.
-// Rare edge cases B#/Cb are included for completeness (e.g. some Tonal scale outputs).
+// Enharmonic equivalents for note matching (one-way to avoid circular ambiguity)
 const ENH = {
   'C#':'Db','Db':'C#','D#':'Eb','Eb':'D#','F#':'Gb','Gb':'F#',
   'G#':'Ab','Ab':'G#','A#':'Bb','Bb':'A#',
-  'B#':'C', 'C':'B#', 'Cb':'B', 'B':'Cb', // theoretical edge cases
+  'B#':'C', 'Cb':'B',
 };
 function matches(dn, do_, dm, exp) {
-  const pc = dn === exp.name || ENH[dn] === exp.name || ENH[exp.name] === dn;
+  // For transposing instruments, the mic hears concert - transpose.
+  // Shift expected pitch down by cfg.transpose so a Bb-instrument player
+  // reading concert C and playing C produces a Bb that matches.
+  const expMidi = exp.midi - cfg.transpose;
+  const expInfo = m2i(expMidi);
+  const pc = dn === expInfo.name || ENH[dn] === expInfo.name;
   if (cfg.diff === 'easy') return pc;
-  if (cfg.diff === 'med')  return pc && Math.abs(do_ - exp.oct) <= 1;
-  return pc && Math.abs(dm - exp.midi) <= 1;
+  if (cfg.diff === 'med')  return pc && Math.abs(do_ - expInfo.oct) <= 1;
+  return pc && Math.abs(dm - expMidi) <= 1;
 }
 
 // ═══════════════════════════════════════════════════
@@ -1377,7 +1367,7 @@ function startRound() {
   // Info bar
   const lbl = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
   document.getElementById('ibMode').textContent = cfg.mode === 'scale' ? 'TONLEITER' : 'LICK';
-  document.getElementById('ibName').textContent = writtenRoot() + ' ' + lbl;
+  document.getElementById('ibName').textContent = cfg.root + ' ' + lbl;
 
   if (cfg.mode === 'lick' && curLick) {
     document.getElementById('ibDesc').textContent = curLick.desc;
@@ -1443,9 +1433,8 @@ function updateNH() {
   if (!n) { document.getElementById('nextH').textContent = '✓ fertig'; return; }
   const dl = {q:'♩', h:'𝅗𝅥', '8':'♪', '16':'𝅘𝅥𝅯'}[n.dur] || '';
   const hz = n.midi ? Math.round(m2f(n.midi)) + 'Hz' : '';
-  const vn = transposedNote(n.midi);
   document.getElementById('nextH').textContent =
-    `${vn.name}${vn.oct} ${dl}${n.dots?'.':''} · ${hz} (${seqIdx+1}/${sequence.length})`;
+    `${n.display}${n.oct} ${dl}${n.dots?'.':''} · ${hz} (${seqIdx+1}/${sequence.length})`;
 }
 setInterval(updateStats, 800);
 
@@ -1458,7 +1447,7 @@ function startGame() {
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('backBtn').style.display = 'flex';
   const lbl = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
-  document.getElementById('tbBadge').textContent = writtenRoot() + ' ' + lbl;
+  document.getElementById('tbBadge').textContent = cfg.root + ' ' + lbl;
   document.getElementById('tbBadge').classList.add('lit');
   document.getElementById('tbMode').textContent =
     cfg.mode === 'scale'
