@@ -77,7 +77,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
 /* scale search */
 .ss-wrap{position:relative}
 .ss-inp{width:100%;padding:7px 10px;background:var(--surf);border:1.5px solid var(--b1);
-  border-radius:7px;color:var(--fg);font-family:var(--mono);font-size:11px;outline:none}
+  border-radius:7px;color:var(--fg);font-family:var(--mono);font-size:11px;outline:none;cursor:pointer}
 .ss-inp:focus{border-color:var(--b2)}
 .ss-dd{position:absolute;left:0;right:0;top:calc(100% + 3px);background:var(--card);
   border:1.5px solid var(--b2);border-radius:8px;max-height:150px;overflow-y:auto;z-index:50;display:none}
@@ -312,7 +312,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
     <div class="cc cf">
       <span class="cl">Skala</span>
       <div class="ss-wrap">
-        <input class="ss-inp" id="scaleSearch" placeholder="z.B. major, dorian, blues, pentatonic…" autocomplete="off">
+        <input class="ss-inp" id="scaleSearch" readonly autocomplete="off">
         <div class="ss-dd" id="scaleDd"></div>
       </div>
       <div style="font-size:10px;color:var(--mut);font-family:var(--mono)">
@@ -380,6 +380,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
     <div class="cc cf">
       <span class="cl">Transposition · Instrument</span>
       <div class="chips" id="transpChips">
+        <div class="chip" data-t="0">🎹 C ±0</div>
         <div class="chip" data-t="3">🎙 Alt +3</div>
         <div class="chip" data-t="-2">🎙 Tenor −2</div>
       </div>
@@ -798,6 +799,7 @@ document.querySelectorAll('#transpChips .chip').forEach(c =>
 );
 document.getElementById('tpMinus').addEventListener('click', () => setTranspose(cfg.transpose - 1));
 document.getElementById('tpPlus').addEventListener('click',  () => setTranspose(cfg.transpose + 1));
+setTranspose(cfg.transpose);
 
 // ═══════════════════════════════════════════════════
 // SCALE SEARCH UI
@@ -814,9 +816,8 @@ function renderDd(q) {
   }).join('');
   ssDd.classList.toggle('open', hits.length > 0);
 }
-ssInp.addEventListener('focus',  () => { ssInp.select(); renderDd(''); });
-ssInp.addEventListener('input',  () => renderDd(ssInp.value));
-ssInp.addEventListener('blur',   () => setTimeout(() => { ssDd.classList.remove('open'); ssInp.value = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale; }, 160));
+ssInp.addEventListener('click',  () => { renderDd(''); });
+ssInp.addEventListener('blur',   () => setTimeout(() => { ssDd.classList.remove('open'); }, 160));
 ssDd.addEventListener('click', e => {
   const o = e.target.closest('.ss-opt'); if (!o) return;
   cfg.scale = o.dataset.id;
