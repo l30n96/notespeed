@@ -1283,7 +1283,9 @@ function pitchLoop() {
 // ═══════════════════════════════════════════════════
 // MATCHING
 // ═══════════════════════════════════════════════════
-// Enharmonic equivalents for note matching (one-way to avoid circular ambiguity)
+// Enharmonic equivalents for note matching.
+// Bidirectional pairs (C#↔Db etc.) cover all common accidentals in both spelling directions.
+// B#→C and Cb→B handle rare theoretical spellings from some scale outputs.
 const ENH = {
   'C#':'Db','Db':'C#','D#':'Eb','Eb':'D#','F#':'Gb','Gb':'F#',
   'G#':'Ab','Ab':'G#','A#':'Bb','Bb':'A#',
