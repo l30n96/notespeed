@@ -340,8 +340,10 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
       </div>
       <div id="scalePoolSec">
         <div style="font-size:10px;color:var(--mut)">
-          Wähle Skalen für automatischen Wechsel nach jeder Runde
+          Wähle Grundtöne und Skalenarten — alle Kombinationen werden der Rotation zugefügt
         </div>
+        <div class="pool-grp-lbl">Grundtöne</div>
+        <div class="chips" id="poolChipsRoots"></div>
         <div class="pool-grp-lbl">Modi</div>
         <div class="chips" id="poolChipsModes"></div>
         <div class="pool-grp-lbl">Pentatonik &amp; Blues</div>
@@ -381,7 +383,8 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
         <div class="chip on" data-t="0">🎹 C Konzert</div>
         <div class="chip" data-t="2">🎺 B♭ +2</div>
         <div class="chip" data-t="9">🎷 E♭ +9</div>
-        <div class="chip" data-t="7">🎻 F +7</div>
+        <div class="chip" data-t="3">🎙 Alt +3</div>
+        <div class="chip" data-t="-2">🎙 Tenor −2</div>
       </div>
       <div class="tp-row">
         <button class="tp-btn" id="tpMinus">−</button>
@@ -703,6 +706,7 @@ const cfg = {
   diff: 'easy',
   poolEnabled: false,
   scalePool: new Set(['major']),
+  rootPool: new Set(['C']),
   transpose: 0,
 };
 
@@ -711,14 +715,17 @@ const cfg = {
 // ═══════════════════════════════════════════════════
 const scaleRotator = {
   history: [],
-  next(current) {
-    const pool = [...cfg.scalePool].filter(s => s !== current);
-    if (!pool.length) return current;
-    const fresh = pool.filter(s => !this.history.includes(s));
+  next(curRoot, curScale) {
+    const pairs = [];
+    for (const r of cfg.rootPool) for (const s of cfg.scalePool) pairs.push([r, s]);
+    const curKey = curRoot + '|' + curScale;
+    const pool = pairs.filter(([r, s]) => r + '|' + s !== curKey);
+    if (!pool.length) return [curRoot, curScale];
+    const fresh = pool.filter(([r, s]) => !this.history.includes(r + '|' + s));
     const candidates = fresh.length ? fresh : pool;
     const pick = candidates[Math.floor(Math.random() * candidates.length)];
-    this.history.push(pick);
-    if (this.history.length > 4) this.history.shift();
+    this.history.push(pick[0] + '|' + pick[1]);
+    if (this.history.length > Math.max(4, pairs.length)) this.history.shift();
     return pick;
   }
 };
@@ -874,6 +881,30 @@ document.querySelectorAll('#lickCatChips .chip').forEach(c =>
 // SCALE POOL UI
 // ═══════════════════════════════════════════════════
 (function buildPoolChips() {
+  // Root pool chips
+  const ROOT_NOTES = [
+    {id:'C',lbl:'C'},{id:'D',lbl:'D'},{id:'E',lbl:'E'},{id:'F',lbl:'F'},
+    {id:'G',lbl:'G'},{id:'A',lbl:'A'},{id:'B',lbl:'B'},
+    {id:'Bb',lbl:'B♭'},{id:'Eb',lbl:'E♭'},{id:'Ab',lbl:'A♭'},
+    {id:'F#',lbl:'F♯'},{id:'Db',lbl:'D♭'}
+  ];
+  const rc = document.getElementById('poolChipsRoots');
+  ROOT_NOTES.forEach(r => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (cfg.rootPool.has(r.id) ? ' on' : '');
+    c.dataset.root = r.id;
+    c.textContent = r.lbl;
+    c.addEventListener('click', () => {
+      if (cfg.rootPool.has(r.id)) {
+        if (cfg.rootPool.size > 1) { cfg.rootPool.delete(r.id); c.classList.remove('on'); }
+      } else {
+        cfg.rootPool.add(r.id); c.classList.add('on');
+      }
+    });
+    rc.appendChild(c);
+  });
+
+  // Scale type pool chips
   const groups = { modes: 'poolChipsModes', blues: 'poolChipsBlues', jazz: 'poolChipsJazz' };
   for (const [grp, elId] of Object.entries(groups)) {
     const container = document.getElementById(elId);
@@ -897,6 +928,13 @@ document.querySelectorAll('#lickCatChips .chip').forEach(c =>
 document.getElementById('poolToggle').addEventListener('change', function() {
   cfg.poolEnabled = this.checked;
   document.getElementById('poolTglLbl').textContent = this.checked ? 'An' : 'Aus';
+  if (this.checked) {
+    // Ensure the currently selected root is part of the pool
+    cfg.rootPool.add(cfg.root);
+    document.querySelectorAll('#poolChipsRoots .chip').forEach(c =>
+      c.classList.toggle('on', cfg.rootPool.has(c.dataset.root))
+    );
+  }
   document.getElementById('scalePoolSec').classList.toggle('open', this.checked);
 });
 
@@ -1351,8 +1389,14 @@ function startRound() {
 
   if (cfg.mode === 'scale') {
     // Scale pool rotation
-    if (cfg.poolEnabled && cfg.scalePool.size > 1) {
-      cfg.scale = scaleRotator.next(cfg.scale);
+    if (cfg.poolEnabled && cfg.rootPool.size * cfg.scalePool.size > 1) {
+      const [newRoot, newScale] = scaleRotator.next(cfg.root, cfg.scale);
+      cfg.root = newRoot;
+      cfg.scale = newScale;
+      // Sync root chip highlight
+      document.querySelectorAll('#rootChips .chip').forEach(c =>
+        c.classList.toggle('on', c.dataset.root === cfg.root)
+      );
       // Sync search field
       ssInp.value = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
       updateSI();
@@ -1370,6 +1414,7 @@ function startRound() {
   const lbl = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
   document.getElementById('ibMode').textContent = cfg.mode === 'scale' ? 'TONLEITER' : 'LICK';
   document.getElementById('ibName').textContent = cfg.root + ' ' + lbl;
+  document.getElementById('tbBadge').textContent = cfg.root + ' ' + lbl;
 
   if (cfg.mode === 'lick' && curLick) {
     document.getElementById('ibDesc').textContent = curLick.desc;
@@ -1386,9 +1431,10 @@ function startRound() {
     db.className     = 'dir-badge ' + (cfg.dir === 'down' ? 'dn' : 'up');
     // Pool badge
     const pb = document.getElementById('poolBadge');
-    if (cfg.poolEnabled && cfg.scalePool.size > 1) {
+    const combos = cfg.rootPool.size * cfg.scalePool.size;
+    if (cfg.poolEnabled && combos > 1) {
       pb.style.display = '';
-      pb.textContent   = '⇄ Pool: ' + cfg.scalePool.size + ' Skalen';
+      pb.textContent   = '⇄ ' + combos + ' Kombos';
     } else {
       pb.style.display = 'none';
     }
