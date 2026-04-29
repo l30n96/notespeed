@@ -296,18 +296,6 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
       </div>
     </div>
 
-    <!-- Octave -->
-    <div class="cc">
-      <span class="cl">Start-Oktave</span>
-      <div class="chips" id="octChips">
-        <div class="chip cb_" data-oct="2">2</div>
-        <div class="chip cb_" data-oct="3">3</div>
-        <div class="chip on cb_" data-oct="4">4</div>
-        <div class="chip cb_" data-oct="5">5</div>
-      </div>
-      <div style="font-size:10px;color:var(--mut)">C4 = mittleres C · 261 Hz</div>
-    </div>
-
     <!-- Scale (always visible) -->
     <div class="cc cf">
       <span class="cl">Skala</span>
@@ -366,23 +354,13 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
       <div class="lick-status" id="lickStatus">Lade Lick-Pool…</div>
     </div>
 
-    <!-- Difficulty -->
-    <div class="cc cf">
-      <span class="cl">Toleranz</span>
-      <div class="chips" id="diffChips">
-        <div class="chip on cb_" data-diff="easy">Einsteiger — Nur Tonname</div>
-        <div class="chip cb_" data-diff="med">Mittel — Oktave ±1</div>
-        <div class="chip cb_" data-diff="hard">Profi — Exakt ±1 Halbton</div>
-      </div>
-    </div>
-
     <!-- Transposition -->
     <div class="cc cf">
       <span class="cl">Transposition · Instrument</span>
       <div class="chips" id="transpChips">
         <div class="chip" data-t="0">🎹 C ±0</div>
         <div class="chip" data-t="3">🎙 Alt +3</div>
-        <div class="chip" data-t="-2">🎙 Tenor −2</div>
+        <div class="chip" data-t="2">🎙 Tenor +2</div>
       </div>
       <div class="tp-row">
         <button class="tp-btn" id="tpMinus">−</button>
@@ -697,11 +675,9 @@ function sb(seq){ return seq.reduce((s,n) => s+nb(n), 0); }
 const cfg = {
   mode: 'scale',
   root: 'C',
-  oct: 4,
   scale: 'major',
   dir: 'up',
   lickCats: new Set(['step']),
-  diff: 'easy',
   poolEnabled: false,
   scalePool: new Set(['major']),
   rootPool: new Set(['C']),
@@ -846,9 +822,7 @@ function wireChips(gid, key, attr) {
   );
 }
 wireChips('rootChips', 'root', 'root');
-wireChips('octChips',  'oct',  'oct');
 wireChips('dirChips',  'dir',  'dir');
-wireChips('diffChips', 'diff', 'diff');
 
 // Mode tiles
 document.querySelectorAll('#modeTiles .mt-tile').forEach(t =>
@@ -952,7 +926,7 @@ function buildScaleSeq() {
   const names = sd.notes;
   if (!names || !names.length) return [];
   const root = names[0];
-  const so = cfg.oct;
+  const so = 4;
   const asc = names.map(n => {
     const o = so + (Note.chroma(n) < Note.chroma(root) ? 1 : 0);
     return { name:n, oct:o, midi:midiOf(n,o), dur:'q', dots:0, display:n };
@@ -970,7 +944,7 @@ function buildLickSeq(lick) {
   if (!names || !names.length) return [];
   const root = names[0];
   const n = names.length;
-  const so = cfg.oct;
+  const so = 4;
   return lick.notes.map(({ deg, dur, dots }) => {
     const idx = (deg - 1) % n;
     const oa  = Math.floor((deg - 1) / n);
@@ -1333,10 +1307,7 @@ function matches(dn, do_, dm, exp) {
   // reading concert C and playing C produces a Bb that matches.
   const expMidi = exp.midi - cfg.transpose;
   const expInfo = m2i(expMidi);
-  const pc = dn === expInfo.name || ENH[dn] === expInfo.name;
-  if (cfg.diff === 'easy') return pc;
-  if (cfg.diff === 'med')  return pc && Math.abs(do_ - expInfo.oct) <= 1;
-  return pc && Math.abs(dm - expMidi) <= 1;
+  return dn === expInfo.name || ENH[dn] === expInfo.name;
 }
 
 // ═══════════════════════════════════════════════════
