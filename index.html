@@ -1541,16 +1541,10 @@ function pitchLoop() {
   const freq = yin(pitchBuf, audioCtx.sampleRate);
   if (!freq || freq < MIN_FREQ || freq > MAX_FREQ) { holdKey = null; holdFired = false; resetTuner(); return; }
 
-  // Update tuner needle: show cents from target note when playing, else from nearest semitone
+  // Octave-independent tuning: always measure cents from nearest chromatic pitch.
+  // This matches the note-detection behaviour which ignores octave entirely.
   const continuousMidi = f2m(freq);
-  if (running && sequence.length && sequence[seqIdx]) {
-    const targetMidi = sequence[seqIdx].midi - cfg.transpose;
-    const rawCents = (continuousMidi - targetMidi) * 100;
-    // Normalise away octave errors from YIN (e.g. C5 detected instead of C4)
-    lastCents = rawCents - Math.round(rawCents / 1200) * 1200;
-  } else {
-    lastCents = (continuousMidi - Math.round(continuousMidi)) * 100;
-  }
+  lastCents = (continuousMidi - Math.round(continuousMidi)) * 100;
   updateTuner(lastCents);
 
   const info = m2i(f2m(freq));
