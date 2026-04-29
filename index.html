@@ -88,9 +88,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
 .ss-opt:hover,.ss-opt.sel{background:rgba(93,245,176,.1);color:var(--ac)}
 .ss-opt .np{font-size:9px;color:var(--mut);margin-top:1px}
 
-/* pool section */
-#scalePoolSec{display:none;flex-direction:column;gap:6px;padding-top:4px}
-#scalePoolSec.open{display:flex}
+
 .pool-grp-lbl{font-family:var(--mono);font-size:8px;letter-spacing:.18em;
   text-transform:uppercase;color:var(--mut);margin-top:4px}
 .lick-status{font-family:var(--mono);font-size:10px;color:var(--mut)}
@@ -224,6 +222,31 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
 }
 .pa{animation:popIn .2s cubic-bezier(.34,1.56,.64,1) forwards}
 
+/* ── SEQUENCE LIST ── */
+.seq-list{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:220px;overflow-y:auto}
+.seq-item{display:flex;align-items:center;gap:6px;padding:6px 10px;
+  background:var(--surf);border:1.5px solid var(--b1);border-radius:7px;
+  font-family:var(--mono);font-size:11px}
+.seq-item-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seq-item-reps{color:var(--ac);font-weight:700;flex-shrink:0;margin-right:2px;font-size:10px}
+.seq-btn{background:none;border:1px solid var(--b1);border-radius:4px;color:var(--mut);
+  font-size:11px;width:22px;height:22px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:all .1s;flex-shrink:0}
+.seq-btn:hover{border-color:var(--b2);color:var(--fg)}
+.seq-btn.del:hover{border-color:var(--rd);color:var(--rd)}
+.seq-empty{text-align:center;padding:14px;font-family:var(--mono);font-size:10px;
+  color:var(--mut);border:1.5px dashed var(--b1);border-radius:7px}
+.seq-add-btn{background:var(--ac);color:var(--bg);border:none;border-radius:6px;
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;
+  padding:6px 14px;cursor:pointer;transition:opacity .1s;text-transform:uppercase;flex-shrink:0}
+.seq-add-btn:hover{opacity:.82}
+.rep-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.rep-val{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--ac);min-width:24px;text-align:center}
+.sec-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.sec-clear-btn{background:none;border:1px solid var(--b1);border-radius:4px;color:var(--mut);
+  font-family:var(--mono);font-size:9px;padding:2px 8px;cursor:pointer;transition:all .1s}
+.sec-clear-btn:hover{border-color:var(--rd);color:var(--rd)}
+
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar{width:4px}
 ::-webkit-scrollbar-track{background:transparent}
@@ -277,79 +300,91 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
       </div>
     </div>
 
-    <!-- Root -->
-    <div class="cc">
-      <span class="cl">Grundton</span>
-      <div class="chips" id="rootChips">
-        <div class="chip on" data-root="C">C</div>
-        <div class="chip" data-root="D">D</div>
-        <div class="chip" data-root="E">E</div>
-        <div class="chip" data-root="F">F</div>
-        <div class="chip" data-root="G">G</div>
-        <div class="chip" data-root="A">A</div>
-        <div class="chip" data-root="B">B</div>
-        <div class="chip cg_" data-root="Bb">B♭</div>
-        <div class="chip cg_" data-root="Eb">E♭</div>
-        <div class="chip cg_" data-root="Ab">A♭</div>
-        <div class="chip cg_" data-root="F#">F♯</div>
-        <div class="chip cg_" data-root="Db">D♭</div>
-      </div>
-    </div>
-
-    <!-- Scale (always visible) -->
-    <div class="cc cf">
-      <span class="cl">Skala</span>
-      <div class="ss-wrap">
-        <input class="ss-inp" id="scaleSearch" readonly autocomplete="off">
-        <div class="ss-dd" id="scaleDd"></div>
-      </div>
-      <div style="font-size:10px;color:var(--mut);font-family:var(--mono)">
-        <span id="selN" style="color:var(--ac)">major</span> — <span id="selNN"></span>
-      </div>
-    </div>
-
-    <!-- Scale mode options -->
+    <!-- Scale mode config (full width) -->
     <div id="cfgScale" class="cc cf">
-      <div class="cl-row">
-        <span class="cl">Richtung</span>
-      </div>
+      <!-- Direction -->
+      <span class="cl">Richtung</span>
       <div class="chips" id="dirChips">
         <div class="chip on" data-dir="up">↑ Auf</div>
         <div class="chip" data-dir="down">↓ Ab</div>
         <div class="chip" data-dir="both">↕ Beides</div>
       </div>
-      <div class="cl-row" style="margin-top:4px">
-        <span class="cl">Skalen-Wechsel</span>
-        <label class="tgl" id="poolToggleWrap">
-          <input type="checkbox" id="poolToggle">
-          <span class="tgl-sl"></span>
-          <span class="tgl-lbl" id="poolTglLbl">Aus</span>
-        </label>
+
+      <!-- Sub-mode: single vs. sequence -->
+      <div class="cl-row" style="margin-top:8px">
+        <span class="cl">Auswahl-Modus</span>
       </div>
-      <div id="scalePoolSec">
-        <div style="font-size:10px;color:var(--mut)">
-          Wähle Grundtöne und Skalenarten — alle Kombinationen werden der Rotation zugefügt
+      <div class="chips" id="scaleModeChips">
+        <div class="chip on" data-smode="single">▶ Einzeln wiederholen</div>
+        <div class="chip" data-smode="sequence">⇢ Skalenfolge</div>
+      </div>
+
+      <!-- SINGLE mode -->
+      <div id="scaleSingleSec" style="margin-top:6px">
+        <div class="pool-grp-lbl">Grundton</div>
+        <div class="chips" id="singleRootChips"></div>
+        <div class="pool-grp-lbl" style="margin-top:5px">Modi</div>
+        <div class="chips" id="singleModesChips"></div>
+        <div class="pool-grp-lbl" style="margin-top:4px">Pentatonik &amp; Blues</div>
+        <div class="chips" id="singleBluesChips"></div>
+        <div class="pool-grp-lbl" style="margin-top:4px">Jazz &amp; Exotisch</div>
+        <div class="chips" id="singleJazzChips"></div>
+      </div>
+
+      <!-- SEQUENCE mode -->
+      <div id="scaleSequenceSec" style="display:none;margin-top:6px">
+        <div class="pool-grp-lbl">Tonleiter zur Folge hinzufügen</div>
+        <div style="font-size:10px;color:var(--mut);font-family:var(--mono);margin-bottom:5px">
+          Grundton und Modus wählen, dann hinzufügen
         </div>
-        <div class="pool-grp-lbl">Grundtöne</div>
-        <div class="chips" id="poolChipsRoots"></div>
-        <div class="pool-grp-lbl">Modi</div>
-        <div class="chips" id="poolChipsModes"></div>
-        <div class="pool-grp-lbl">Pentatonik &amp; Blues</div>
-        <div class="chips" id="poolChipsBlues"></div>
-        <div class="pool-grp-lbl">Jazz &amp; Exotisch</div>
-        <div class="chips" id="poolChipsJazz"></div>
+        <div class="chips" id="seqBldRoot"></div>
+        <div class="pool-grp-lbl" style="margin-top:5px">Modus/Skala</div>
+        <div class="chips" id="seqBldMode"></div>
+        <div class="cl-row" style="margin-top:7px;flex-wrap:wrap;gap:8px">
+          <div class="rep-row">
+            <span style="font-family:var(--mono);font-size:10px;color:var(--mut)">Wdh.</span>
+            <button class="tp-btn" id="seqRepMinus">−</button>
+            <span class="rep-val" id="seqRepVal">1</span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--mut)">×</span>
+            <button class="tp-btn" id="seqRepPlus">+</button>
+          </div>
+          <button class="seq-add-btn" id="seqAddBtn">+ Hinzufügen</button>
+        </div>
+        <!-- Sequence overview -->
+        <div class="sec-head" style="margin-top:10px">
+          <span class="cl">Folge</span>
+          <button class="sec-clear-btn" id="seqClearBtn">Alles leeren</button>
+        </div>
+        <div class="seq-list" id="seqList"></div>
+        <div class="seq-empty" id="seqEmpty">Noch leer — füge Tonleitern oben hinzu</div>
       </div>
     </div>
 
-    <!-- Lick mode options -->
+    <!-- Lick mode config -->
     <div id="cfgLick" class="cc cf" style="display:none">
-      <span class="cl">Lick-Kategorien (Mehrfachwahl)</span>
+      <!-- Root for lick -->
+      <span class="cl">Grundton</span>
+      <div class="chips" id="lickRootChips"></div>
+      <div class="pool-grp-lbl" style="margin-top:5px">Skala</div>
+      <div class="chips" id="lickScaleChips"></div>
+      <!-- Lick categories -->
+      <span class="cl" style="margin-top:8px;display:block">Lick-Kategorien (Mehrfachwahl)</span>
       <div class="chips" id="lickCatChips">
         <div class="chip on cr_" data-cat="step">↗ Steps</div>
         <div class="chip cr_" data-cat="skip">↕ Skips</div>
         <div class="chip cr_" data-cat="turn">↩ Turns</div>
         <div class="chip cr_" data-cat="bebop">🎺 Bebop</div>
         <div class="chip cr_" data-cat="blues">🎸 Blues</div>
+      </div>
+      <!-- Repetitions per lick -->
+      <div class="cl-row" style="margin-top:7px">
+        <span class="cl">Wiederholungen pro Lick</span>
+        <div class="rep-row">
+          <button class="tp-btn" id="lickRepMinus">−</button>
+          <span class="rep-val" id="lickRepVal">1</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--mut)">×</span>
+          <button class="tp-btn" id="lickRepPlus">+</button>
+        </div>
       </div>
       <div class="lick-status" id="lickStatus">Lade Lick-Pool…</div>
     </div>
@@ -672,35 +707,43 @@ function sb(seq){ return seq.reduce((s,n) => s+nb(n), 0); }
 // ═══════════════════════════════════════════════════
 // CONFIG STATE
 // ═══════════════════════════════════════════════════
+const MAX_REPS = 8; // maximum repetitions for scales in sequence or licks
+
 const cfg = {
   mode: 'scale',
   root: 'C',
   scale: 'major',
   dir: 'up',
   lickCats: new Set(['step']),
-  poolEnabled: false,
-  scalePool: new Set(['major']),
-  rootPool: new Set(['C']),
+  // scale sub-mode
+  scaleSubMode: 'single',  // 'single' | 'sequence'
+  scaleSequence: [],        // [{root, scale, reps}, ...]
+  // lick repetitions
+  lickReps: 1,
   transpose: 0,
 };
 
 // ═══════════════════════════════════════════════════
-// SCALE ROTATOR
+// SEQUENCE CURSOR  (tracks position inside scaleSequence)
 // ═══════════════════════════════════════════════════
-const scaleRotator = {
-  history: [],
-  next(curRoot, curScale) {
-    const pairs = [];
-    for (const r of cfg.rootPool) for (const s of cfg.scalePool) pairs.push([r, s]);
-    const curKey = curRoot + '|' + curScale;
-    const pool = pairs.filter(([r, s]) => r + '|' + s !== curKey);
-    if (!pool.length) return [curRoot, curScale];
-    const fresh = pool.filter(([r, s]) => !this.history.includes(r + '|' + s));
-    const candidates = fresh.length ? fresh : pool;
-    const pick = candidates[Math.floor(Math.random() * candidates.length)];
-    this.history.push(pick[0] + '|' + pick[1]);
-    if (this.history.length > Math.max(4, pairs.length)) this.history.shift();
-    return pick;
+const seqCursor = {
+  itemIdx: 0,
+  repsLeft: 0,
+  reset() {
+    this.itemIdx = 0;
+    this.repsLeft = cfg.scaleSequence.length > 0 ? cfg.scaleSequence[0].reps : 1;
+  },
+  advance() {
+    if (!cfg.scaleSequence.length) return;
+    this.repsLeft--;
+    if (this.repsLeft <= 0) {
+      this.itemIdx = (this.itemIdx + 1) % cfg.scaleSequence.length;
+      this.repsLeft = cfg.scaleSequence[this.itemIdx]?.reps || 1;
+    }
+  },
+  current() {
+    if (!cfg.scaleSequence.length) return null;
+    return cfg.scaleSequence[this.itemIdx] || null;
   }
 };
 
@@ -778,53 +821,183 @@ document.getElementById('tpPlus').addEventListener('click',  () => setTranspose(
 setTranspose(cfg.transpose);
 
 // ═══════════════════════════════════════════════════
-// SCALE SEARCH UI
-// ═══════════════════════════════════════════════════
-const ssInp = document.getElementById('scaleSearch');
-const ssDd  = document.getElementById('scaleDd');
-
-function renderDd(q) {
-  q = (q || '').toLowerCase().trim();
-  const hits = SCALES.filter(s => !q || s.id.includes(q) || s.lbl.toLowerCase().includes(q));
-  ssDd.innerHTML = hits.map(s => {
-    const nn = Scale.get('C ' + s.id).notes.join('–') || '?';
-    return `<div class="ss-opt${s.id===cfg.scale?' sel':''}" data-id="${s.id}">${s.lbl}<div class="np">C: ${nn}</div></div>`;
-  }).join('');
-  ssDd.classList.toggle('open', hits.length > 0);
-}
-ssInp.addEventListener('click',  () => { renderDd(''); });
-ssInp.addEventListener('blur',   () => setTimeout(() => { ssDd.classList.remove('open'); }, 160));
-ssDd.addEventListener('click', e => {
-  const o = e.target.closest('.ss-opt'); if (!o) return;
-  cfg.scale = o.dataset.id;
-  ssInp.value = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
-  ssDd.classList.remove('open');
-  updateSI();
-});
-function updateSI() {
-  document.getElementById('selN').textContent  = cfg.scale;
-  document.getElementById('selNN').textContent = Scale.get(cfg.root + ' ' + cfg.scale).notes.join(' · ') || '?';
-}
-ssInp.value = 'Major (Ionisch)';
-updateSI();
-
-// ═══════════════════════════════════════════════════
-// CHIP WIRING (single-select)
+// CHIP WIRING
 // ═══════════════════════════════════════════════════
 function wireChips(gid, key, attr) {
   document.querySelectorAll('#' + gid + ' .chip').forEach(c =>
     c.addEventListener('click', () => {
       document.querySelectorAll('#' + gid + ' .chip').forEach(x => x.classList.remove('on'));
       c.classList.add('on');
-      cfg[key] = attr === 'oct' ? +c.dataset[attr] : c.dataset[attr];
-      if (key === 'root') updateSI();
+      cfg[key] = c.dataset[attr];
     })
   );
 }
-wireChips('rootChips', 'root', 'root');
-wireChips('dirChips',  'dir',  'dir');
+wireChips('dirChips', 'dir', 'dir');
 
-// Mode tiles
+// ═══════════════════════════════════════════════════
+// SCALE MODE: BUILD SINGLE-MODE CHIPS
+// ═══════════════════════════════════════════════════
+const ROOT_NOTES = [
+  {id:'C',lbl:'C'},{id:'D',lbl:'D'},{id:'E',lbl:'E'},{id:'F',lbl:'F'},
+  {id:'G',lbl:'G'},{id:'A',lbl:'A'},{id:'B',lbl:'B'},
+  {id:'Bb',lbl:'B♭'},{id:'Eb',lbl:'E♭'},{id:'Ab',lbl:'A♭'},
+  {id:'F#',lbl:'F♯'},{id:'Db',lbl:'D♭'}
+];
+
+function buildRootChips(containerId, currentRoot, onChange) {
+  const container = document.getElementById(containerId);
+  container.innerHTML = '';
+  ROOT_NOTES.forEach(r => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (r.id === currentRoot ? ' on' : '');
+    c.dataset.root = r.id;
+    c.textContent = r.lbl;
+    c.addEventListener('click', () => {
+      container.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+      c.classList.add('on');
+      onChange(r.id);
+    });
+    container.appendChild(c);
+  });
+}
+
+function buildScaleChips(groups, currentScale, onChange) {
+  // groups: [{containerId, group}]
+  groups.forEach(({ containerId, group }) => {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    SCALES.filter(s => s.group === group).forEach(s => {
+      const c = document.createElement('div');
+      c.className = 'chip' + (s.id === currentScale ? ' on' : '');
+      c.dataset.id = s.id;
+      c.textContent = s.lbl;
+      c.addEventListener('click', () => {
+        // deselect across all groups
+        groups.forEach(g => {
+          document.getElementById(g.containerId).querySelectorAll('.chip')
+            .forEach(x => x.classList.remove('on'));
+        });
+        c.classList.add('on');
+        onChange(s.id);
+      });
+      container.appendChild(c);
+    });
+  });
+}
+
+const SINGLE_SCALE_GROUPS = [
+  { containerId: 'singleModesChips', group: 'modes' },
+  { containerId: 'singleBluesChips', group: 'blues' },
+  { containerId: 'singleJazzChips',  group: 'jazz'  },
+];
+
+buildRootChips('singleRootChips', cfg.root, id => { cfg.root = id; });
+// NOTE: buildScaleChips for single mode is called below (after lick chips exist for sync)
+
+// ═══════════════════════════════════════════════════
+// SCALE MODE TOGGLE (Single / Sequence)
+// ═══════════════════════════════════════════════════
+function setScaleSubMode(mode) {
+  cfg.scaleSubMode = mode;
+  document.querySelectorAll('#scaleModeChips .chip').forEach(c =>
+    c.classList.toggle('on', c.dataset.smode === mode)
+  );
+  document.getElementById('scaleSingleSec').style.display   = mode === 'single'   ? '' : 'none';
+  document.getElementById('scaleSequenceSec').style.display = mode === 'sequence' ? '' : 'none';
+}
+document.querySelectorAll('#scaleModeChips .chip').forEach(c =>
+  c.addEventListener('click', () => setScaleSubMode(c.dataset.smode))
+);
+
+// ═══════════════════════════════════════════════════
+// SEQUENCE BUILDER UI
+// ═══════════════════════════════════════════════════
+let seqBldRoot  = 'C';
+let seqBldScale = 'major';
+let seqBldReps  = 1;
+
+buildRootChips('seqBldRoot', seqBldRoot, id => { seqBldRoot = id; });
+
+function buildSeqBldScaleChips() {
+  const container = document.getElementById('seqBldMode');
+  container.innerHTML = '';
+  SCALES.forEach(s => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (s.id === seqBldScale ? ' on' : '');
+    c.dataset.id = s.id;
+    c.textContent = s.lbl;
+    c.addEventListener('click', () => {
+      container.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+      c.classList.add('on');
+      seqBldScale = s.id;
+    });
+    container.appendChild(c);
+  });
+}
+buildSeqBldScaleChips();
+
+function setSeqReps(v) {
+  seqBldReps = Math.max(1, Math.min(MAX_REPS, v));
+  document.getElementById('seqRepVal').textContent = seqBldReps;
+}
+document.getElementById('seqRepMinus').addEventListener('click', () => setSeqReps(seqBldReps - 1));
+document.getElementById('seqRepPlus').addEventListener('click',  () => setSeqReps(seqBldReps + 1));
+
+function renderSeqList() {
+  const list  = document.getElementById('seqList');
+  const empty = document.getElementById('seqEmpty');
+  list.innerHTML = '';
+  if (!cfg.scaleSequence.length) {
+    list.style.display  = 'none';
+    empty.style.display = '';
+    return;
+  }
+  list.style.display  = '';
+  empty.style.display = 'none';
+  cfg.scaleSequence.forEach((item, i) => {
+    const scaleLbl = SCALES.find(s => s.id === item.scale)?.lbl || item.scale;
+    const div = document.createElement('div');
+    div.className = 'seq-item';
+    div.innerHTML = `
+      <span class="seq-item-label">${item.root} · ${scaleLbl}</span>
+      <span class="seq-item-reps">${item.reps}×</span>
+      <button class="seq-btn" title="Nach oben" data-action="up" data-i="${i}">↑</button>
+      <button class="seq-btn" title="Nach unten" data-action="dn" data-i="${i}">↓</button>
+      <button class="seq-btn del" title="Entfernen" data-action="del" data-i="${i}">✕</button>
+    `;
+    list.appendChild(div);
+  });
+  list.querySelectorAll('.seq-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = +btn.dataset.i;
+      const act = btn.dataset.action;
+      if (act === 'del') {
+        cfg.scaleSequence.splice(idx, 1);
+      } else if (act === 'up' && idx > 0) {
+        [cfg.scaleSequence[idx-1], cfg.scaleSequence[idx]] =
+          [cfg.scaleSequence[idx], cfg.scaleSequence[idx-1]];
+      } else if (act === 'dn' && idx < cfg.scaleSequence.length - 1) {
+        [cfg.scaleSequence[idx], cfg.scaleSequence[idx+1]] =
+          [cfg.scaleSequence[idx+1], cfg.scaleSequence[idx]];
+      }
+      renderSeqList();
+    });
+  });
+}
+renderSeqList();
+
+document.getElementById('seqAddBtn').addEventListener('click', () => {
+  cfg.scaleSequence.push({ root: seqBldRoot, scale: seqBldScale, reps: seqBldReps });
+  renderSeqList();
+});
+document.getElementById('seqClearBtn').addEventListener('click', () => {
+  cfg.scaleSequence = [];
+  renderSeqList();
+});
+
+// ═══════════════════════════════════════════════════
+// MODE TILES
+// ═══════════════════════════════════════════════════
 document.querySelectorAll('#modeTiles .mt-tile').forEach(t =>
   t.addEventListener('click', () => {
     document.querySelectorAll('#modeTiles .mt-tile').forEach(x => x.classList.remove('on'));
@@ -834,6 +1007,60 @@ document.querySelectorAll('#modeTiles .mt-tile').forEach(t =>
     document.getElementById('cfgLick').style.display  = cfg.mode === 'lick'  ? '' : 'none';
   })
 );
+
+// ═══════════════════════════════════════════════════
+// LICK CHIPS (root + scale for lick mode)
+// ═══════════════════════════════════════════════════
+// Build lick root chips sharing cfg.root
+buildRootChips('lickRootChips', cfg.root, id => { cfg.root = id; });
+// Build lick scale chips (all scales, flat list)
+(function buildLickScaleChips() {
+  const container = document.getElementById('lickScaleChips');
+  SCALES.forEach(s => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (s.id === cfg.scale ? ' on' : '');
+    c.dataset.id = s.id;
+    c.textContent = s.lbl;
+    c.addEventListener('click', () => {
+      container.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
+      c.classList.add('on');
+      cfg.scale = s.id;
+      // sync single-mode chips too
+      SINGLE_SCALE_GROUPS.forEach(g => {
+        document.getElementById(g.containerId).querySelectorAll('.chip').forEach(ch =>
+          ch.classList.toggle('on', ch.dataset.id === cfg.scale)
+        );
+      });
+    });
+    container.appendChild(c);
+  });
+})();
+
+// Bidirectional root sync: singleRootChips ↔ lickRootChips
+function syncRootChips(sourceId) {
+  const root = cfg.root;
+  ['singleRootChips','lickRootChips'].forEach(id => {
+    if (id !== sourceId) {
+      document.getElementById(id).querySelectorAll('.chip').forEach(c =>
+        c.classList.toggle('on', c.dataset.root === root)
+      );
+    }
+  });
+}
+['singleRootChips','lickRootChips'].forEach(containerId => {
+  document.getElementById(containerId).querySelectorAll('.chip').forEach(c => {
+    c.addEventListener('click', () => syncRootChips(containerId));
+  });
+});
+
+// Bidirectional scale sync: single mode ↔ lick mode
+// Build single scale chips with sync to lick chips
+buildScaleChips(SINGLE_SCALE_GROUPS, cfg.scale, id => {
+  cfg.scale = id;
+  document.getElementById('lickScaleChips').querySelectorAll('.chip').forEach(ch =>
+    ch.classList.toggle('on', ch.dataset.id === id)
+  );
+});
 
 // Lick category (multi-select)
 document.querySelectorAll('#lickCatChips .chip').forEach(c =>
@@ -849,66 +1076,13 @@ document.querySelectorAll('#lickCatChips .chip').forEach(c =>
   })
 );
 
-// ═══════════════════════════════════════════════════
-// SCALE POOL UI
-// ═══════════════════════════════════════════════════
-(function buildPoolChips() {
-  // Root pool chips
-  const ROOT_NOTES = [
-    {id:'C',lbl:'C'},{id:'D',lbl:'D'},{id:'E',lbl:'E'},{id:'F',lbl:'F'},
-    {id:'G',lbl:'G'},{id:'A',lbl:'A'},{id:'B',lbl:'B'},
-    {id:'Bb',lbl:'B♭'},{id:'Eb',lbl:'E♭'},{id:'Ab',lbl:'A♭'},
-    {id:'F#',lbl:'F♯'},{id:'Db',lbl:'D♭'}
-  ];
-  const rc = document.getElementById('poolChipsRoots');
-  ROOT_NOTES.forEach(r => {
-    const c = document.createElement('div');
-    c.className = 'chip' + (cfg.rootPool.has(r.id) ? ' on' : '');
-    c.dataset.root = r.id;
-    c.textContent = r.lbl;
-    c.addEventListener('click', () => {
-      if (cfg.rootPool.has(r.id)) {
-        if (cfg.rootPool.size > 1) { cfg.rootPool.delete(r.id); c.classList.remove('on'); }
-      } else {
-        cfg.rootPool.add(r.id); c.classList.add('on');
-      }
-    });
-    rc.appendChild(c);
-  });
-
-  // Scale type pool chips
-  const groups = { modes: 'poolChipsModes', blues: 'poolChipsBlues', jazz: 'poolChipsJazz' };
-  for (const [grp, elId] of Object.entries(groups)) {
-    const container = document.getElementById(elId);
-    SCALES.filter(s => s.group === grp).forEach(s => {
-      const c = document.createElement('div');
-      c.className = 'chip' + (cfg.scalePool.has(s.id) ? ' on' : '');
-      c.dataset.id = s.id;
-      c.textContent = s.lbl;
-      c.addEventListener('click', () => {
-        if (cfg.scalePool.has(s.id)) {
-          if (cfg.scalePool.size > 1) { cfg.scalePool.delete(s.id); c.classList.remove('on'); }
-        } else {
-          cfg.scalePool.add(s.id); c.classList.add('on');
-        }
-      });
-      container.appendChild(c);
-    });
-  }
-})();
-
-document.getElementById('poolToggle').addEventListener('change', function() {
-  cfg.poolEnabled = this.checked;
-  document.getElementById('poolTglLbl').textContent = this.checked ? 'An' : 'Aus';
-  if (this.checked) {
-    // Ensure the currently selected root is part of the pool
-    cfg.rootPool.add(cfg.root);
-    document.querySelectorAll('#poolChipsRoots .chip').forEach(c =>
-      c.classList.toggle('on', cfg.rootPool.has(c.dataset.root))
-    );
-  }
-  document.getElementById('scalePoolSec').classList.toggle('open', this.checked);
-});
+// Lick repetitions stepper
+function setLickReps(v) {
+  cfg.lickReps = Math.max(1, Math.min(MAX_REPS, v));
+  document.getElementById('lickRepVal').textContent = cfg.lickReps;
+}
+document.getElementById('lickRepMinus').addEventListener('click', () => setLickReps(cfg.lickReps - 1));
+document.getElementById('lickRepPlus').addEventListener('click',  () => setLickReps(cfg.lickReps + 1));
 
 function updateLickStatus() {
   lickRotator.buildPool();
@@ -1317,6 +1491,9 @@ let sequence = [], seqIdx = 0;
 let correct = 0, total = 0, streak = 0, bestStreak = 0;
 let startTime = null, running = false, flashTO = null;
 let curLick = null;
+let lickRepsDone = 0;  // how many times current lick has been played this round
+// For sequence mode badge display
+let seqDisplayIdx = 0, seqDisplayRepNum = 1;
 
 function onNote(name, oct, midi) {
   if (!running || !sequence.length) return;
@@ -1334,7 +1511,6 @@ function onNote(name, oct, midi) {
     seqIdx++;
     if (seqIdx >= sequence.length) {
       card.classList.add('fg');
-      if (cfg.mode === 'lick')  lickRotator.markPlayed();
       clearTimeout(flashTO);
       flashTO = setTimeout(() => { card.classList.remove('fg'); startRound(); }, 420);
     } else {
@@ -1357,22 +1533,24 @@ function startRound() {
   stopPB();
 
   if (cfg.mode === 'scale') {
-    // Scale pool rotation
-    if (cfg.poolEnabled && cfg.rootPool.size * cfg.scalePool.size > 1) {
-      const [newRoot, newScale] = scaleRotator.next(cfg.root, cfg.scale);
-      cfg.root = newRoot;
-      cfg.scale = newScale;
-      // Sync root chip highlight
-      document.querySelectorAll('#rootChips .chip').forEach(c =>
-        c.classList.toggle('on', c.dataset.root === cfg.root)
-      );
-      // Sync search field
-      ssInp.value = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
-      updateSI();
+    if (cfg.scaleSubMode === 'sequence' && cfg.scaleSequence.length > 0) {
+      // Capture display info BEFORE advancing cursor
+      seqDisplayIdx    = seqCursor.itemIdx;
+      const item       = seqCursor.current();
+      seqDisplayRepNum = item ? item.reps - seqCursor.repsLeft + 1 : 1;
+      if (item) { cfg.root = item.root; cfg.scale = item.scale; }
+      seqCursor.advance();
     }
     sequence = buildScaleSeq();
   } else {
-    curLick  = lickRotator.next();
+    // Lick mode with repetitions
+    if (curLick === null || lickRepsDone >= cfg.lickReps) {
+      if (curLick !== null) lickRotator.markPlayed();
+      curLick = lickRotator.next();
+      lickRepsDone = 1;
+    } else {
+      lickRepsDone++;
+    }
     sequence = buildLickSeq(curLick);
     updateLickStatus();
   }
@@ -1390,7 +1568,14 @@ function startRound() {
     const re = document.getElementById('ibRhy');
     re.textContent = curLick.rhy || ''; re.style.display = '';
     document.getElementById('dirBadge').style.display = 'none';
-    document.getElementById('poolBadge').style.display = 'none';
+    // Show repetition badge in pool badge slot
+    const pb = document.getElementById('poolBadge');
+    if (cfg.lickReps > 1) {
+      pb.style.display = '';
+      pb.textContent   = lickRepsDone + '/' + cfg.lickReps + ' Wdh.';
+    } else {
+      pb.style.display = 'none';
+    }
   } else {
     document.getElementById('ibDesc').textContent = '';
     document.getElementById('ibRhy').style.display = 'none';
@@ -1398,12 +1583,13 @@ function startRound() {
     db.style.display = '';
     db.textContent   = cfg.dir === 'both' ? '↕ BEIDES' : cfg.dir === 'up' ? '↑ AUF' : '↓ AB';
     db.className     = 'dir-badge ' + (cfg.dir === 'down' ? 'dn' : 'up');
-    // Pool badge
+    // Pool / sequence badge
     const pb = document.getElementById('poolBadge');
-    const combos = cfg.rootPool.size * cfg.scalePool.size;
-    if (cfg.poolEnabled && combos > 1) {
+    if (cfg.scaleSubMode === 'sequence' && cfg.scaleSequence.length > 0) {
+      const item = cfg.scaleSequence[seqDisplayIdx];
       pb.style.display = '';
-      pb.textContent   = '⇄ ' + combos + ' Kombos';
+      pb.textContent   = '⇢ ' + (seqDisplayIdx + 1) + '/' + cfg.scaleSequence.length +
+        (item && item.reps > 1 ? ' · ' + seqDisplayRepNum + '/' + item.reps + '×' : '');
     } else {
       pb.style.display = 'none';
     }
@@ -1461,25 +1647,41 @@ setInterval(updateStats, 800);
 function startGame() {
   correct = 0; total = 0; streak = 0; bestStreak = 0;
   startTime = Date.now(); running = true;
+  // Reset cursors — startRound() will handle first item pickup
+  if (cfg.mode === 'scale' && cfg.scaleSubMode === 'sequence') {
+    seqCursor.reset();
+    seqDisplayIdx = 0; seqDisplayRepNum = 1;
+  }
+  if (cfg.mode === 'lick') {
+    curLick = null; lickRepsDone = 0;
+    lickRotator.buildPool(); lickRotator.played.clear();
+  }
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('backBtn').style.display = 'flex';
   const lbl = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
   document.getElementById('tbBadge').textContent = cfg.root + ' ' + lbl;
   document.getElementById('tbBadge').classList.add('lit');
   document.getElementById('tbMode').textContent =
-    cfg.mode === 'scale'
-      ? (cfg.dir === 'both' ? '↕' : cfg.dir === 'up' ? '↑' : '↓') + ' Skala'
-      : '♩ Lick';
+    cfg.mode === 'lick' ? '♩ Lick' :
+    cfg.scaleSubMode === 'sequence' ? '⇢ Folge' :
+    (cfg.dir === 'both' ? '↕' : cfg.dir === 'up' ? '↑' : '↓') + ' Skala';
   // Transpose badge in topbar
   const tbT = document.getElementById('tbTransp');
   if (cfg.transpose !== 0) { tbT.textContent = transpLabel(); tbT.style.display = ''; }
   else { tbT.style.display = 'none'; }
-  if (cfg.mode === 'lick') lickRotator.buildPool();
   updateStats();
   startRound();
   if (!micActive) startMic();
 }
-document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('startBtn').addEventListener('click', () => {
+  if (cfg.mode === 'scale' && cfg.scaleSubMode === 'sequence' && cfg.scaleSequence.length === 0) {
+    const el = document.getElementById('seqEmpty');
+    el.style.outline = '2px solid var(--rd)';
+    setTimeout(() => { el.style.outline = ''; }, 1200);
+    return;
+  }
+  startGame();
+});
 
 document.getElementById('setBtn').addEventListener('click', () => {
   running = false; stopPB();
