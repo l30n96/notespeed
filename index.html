@@ -1819,9 +1819,15 @@ document.addEventListener('keydown', e => {
 // ═══════════════════════════════════════════════════
 // METRONOME
 // ═══════════════════════════════════════════════════
+const METRO_COLLAPSE_MS = 250; // matches CSS width transition (.24s + buffer)
+
 let metroActive = false, metroBpm = 120;
 let metroTO = null, metroNextTime = 0, metroBeat = 0;
 let msDragStartX = 0, msDragStartBpm = 120, msDragging = false;
+
+// Visual-beat tracking for the rAF loop (avoids per-beat setTimeout accumulation)
+let metroLastBeatAt = -1, metroLastFlashedAt = -1, metroFlashStart = -1;
+let metroRafId = null;
 
 function metroClick(ac, t, accent) {
   const osc = ac.createOscillator(), env = ac.createGain();
@@ -1833,18 +1839,30 @@ function metroClick(ac, t, accent) {
   osc.start(t); osc.stop(t + 0.052);
 }
 
+function metroVisualLoop() {
+  if (!metroActive) { metroRafId = null; return; }
+  const ac = getAC();
+  const now = ac.currentTime;
+  const btn = document.getElementById('metroBtn');
+  if (btn) {
+    if (metroLastBeatAt > metroLastFlashedAt && now >= metroLastBeatAt - 0.005) {
+      metroLastFlashedAt = metroLastBeatAt;
+      metroFlashStart = now;
+      btn.classList.add('beat');
+    }
+    if (metroFlashStart > 0 && now - metroFlashStart >= 0.08) {
+      btn.classList.remove('beat');
+      metroFlashStart = -1;
+    }
+  }
+  metroRafId = requestAnimationFrame(metroVisualLoop);
+}
+
 function scheduleMetro() {
   const ac = getAC();
   while (metroNextTime < ac.currentTime + 0.1) {
-    const beat = metroBeat;
-    metroClick(ac, metroNextTime, beat % 4 === 0);
-    const delay = Math.max(0, (metroNextTime - ac.currentTime) * 1000);
-    setTimeout(() => {
-      const btn = document.getElementById('metroBtn');
-      if (!btn) return;
-      btn.classList.add('beat');
-      setTimeout(() => btn.classList.remove('beat'), 80);
-    }, delay);
+    metroClick(ac, metroNextTime, metroBeat % 4 === 0);
+    metroLastBeatAt = metroNextTime;
     metroBeat++;
     metroNextTime += 60 / metroBpm;
   }
@@ -1855,13 +1873,16 @@ function startMetro() {
   metroActive = true;
   metroBeat = 0;
   metroNextTime = getAC().currentTime + 0.05;
+  metroLastBeatAt = -1; metroLastFlashedAt = -1; metroFlashStart = -1;
   document.getElementById('metroBtn').classList.add('active');
   scheduleMetro();
+  metroRafId = requestAnimationFrame(metroVisualLoop);
 }
 
 function stopMetro() {
   metroActive = false;
   clearTimeout(metroTO); metroTO = null;
+  if (metroRafId) { cancelAnimationFrame(metroRafId); metroRafId = null; }
   const btn = document.getElementById('metroBtn');
   if (btn) btn.classList.remove('active', 'beat');
 }
@@ -1882,7 +1903,7 @@ msBtn.addEventListener('pointerdown', e => {
   e.preventDefault();
   msBtn.setPointerCapture(e.pointerId);
   msBtn.classList.add('open');
-  msDragStartX  = e.clientX;
+  msDragStartX   = e.clientX;
   msDragStartBpm = metroBpm;
   msDragging = true;
 });
@@ -1891,18 +1912,17 @@ msBtn.addEventListener('pointermove', e => {
   if (!msDragging) return;
   const delta = e.clientX - msDragStartX;
   setMetroBpm(msDragStartBpm + Math.round(delta / 2));
-  // restart metro with new BPM mid-flight
+  // Apply new BPM mid-flight without disrupting the accent-beat counter
   if (metroActive) {
     clearTimeout(metroTO);
     metroNextTime = getAC().currentTime + 0.05;
-    metroBeat = 0;
     scheduleMetro();
   }
 });
 
 msBtn.addEventListener('pointerup', () => {
   msDragging = false;
-  setTimeout(() => msBtn.classList.remove('open'), 160);
+  setTimeout(() => msBtn.classList.remove('open'), METRO_COLLAPSE_MS);
 });
 
 msBtn.addEventListener('pointercancel', () => {
