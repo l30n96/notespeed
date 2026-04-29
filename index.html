@@ -286,6 +286,38 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
   .oti{font-size:24px}
   #nextH{display:none}
 }
+
+/* ── METRONOME ── */
+.metro-wrap{display:flex;align-items:center;gap:4px;flex-shrink:0}
+#metroBtn{display:flex;align-items:center;justify-content:center;
+  background:none;border:1.5px solid var(--b1);border-radius:7px;
+  color:var(--mut);font-size:15px;width:28px;height:28px;
+  cursor:pointer;flex-shrink:0;
+  transition:border-color .12s,color .12s,transform .08s,background .12s}
+#metroBtn:hover{border-color:var(--b2);color:var(--fg)}
+#metroBtn.active{border-color:var(--ac);color:var(--ac);background:rgba(93,245,176,.07)}
+#metroBtn.beat{transform:scale(1.2)}
+#metroSetBtn{
+  height:28px;width:28px;
+  background:none;border:1.5px solid var(--b1);border-radius:7px;
+  color:var(--mut);cursor:grab;overflow:hidden;position:relative;
+  transition:width .24s cubic-bezier(.34,1.56,.64,1),
+    border-color .15s,color .15s,background .15s;
+  user-select:none;-webkit-user-select:none;touch-action:none;
+  flex-shrink:0}
+#metroSetBtn:hover:not(.open){border-color:var(--b2)}
+#metroSetBtn.open{
+  width:80px;border-color:var(--pu);color:var(--pu);
+  background:rgba(176,125,245,.08);cursor:grabbing}
+.ms-icon,.ms-bpm{
+  position:absolute;top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  white-space:nowrap;pointer-events:none}
+.ms-icon{font-size:13px;transition:opacity .12s}
+.ms-bpm{font-family:var(--mono);font-size:12px;font-weight:700;
+  opacity:0;transition:opacity .12s .08s;letter-spacing:.02em}
+#metroSetBtn.open .ms-icon{opacity:0;transition-delay:0s}
+#metroSetBtn.open .ms-bpm{opacity:1}
 </style>
 </head>
 <body>
@@ -455,6 +487,13 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
     <div class="bottom-bar">
       <button id="playBtn"><span class="pi">▶</span><span id="playLabel">Vorspielen</span></button>
       <div class="ndots" id="ndots"></div>
+      <div class="metro-wrap">
+        <button id="metroBtn" title="Metronom">♩</button>
+        <button id="metroSetBtn" title="BPM — halten &amp; ziehen">
+          <span class="ms-icon">◈</span>
+          <span class="ms-bpm" id="msBpm">120</span>
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -1757,13 +1796,13 @@ document.getElementById('startBtn').addEventListener('click', () => {
 });
 
 document.getElementById('setBtn').addEventListener('click', () => {
-  running = false; stopPB();
+  running = false; stopPB(); stopMetro();
   document.getElementById('overlay').classList.remove('hidden');
   document.getElementById('startBtn').textContent = 'Neu starten';
   updateLickStatus();
 });
 document.getElementById('backBtn').addEventListener('click', () => {
-  running = false; stopPB();
+  running = false; stopPB(); stopMetro();
   document.getElementById('backBtn').style.display = 'none';
   document.getElementById('overlay').classList.remove('hidden');
   document.getElementById('startBtn').textContent = 'Neu starten';
@@ -1776,6 +1815,102 @@ document.addEventListener('keydown', e => {
   e.preventDefault();
   const n = sequence[seqIdx]; if (n) onNote(n.name, n.oct, n.midi);
 });
+
+// ═══════════════════════════════════════════════════
+// METRONOME
+// ═══════════════════════════════════════════════════
+let metroActive = false, metroBpm = 120;
+let metroTO = null, metroNextTime = 0, metroBeat = 0;
+let msDragStartX = 0, msDragStartBpm = 120, msDragging = false;
+
+function metroClick(ac, t, accent) {
+  const osc = ac.createOscillator(), env = ac.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(accent ? 1200 : 820, t);
+  env.gain.setValueAtTime(accent ? 0.5 : 0.32, t);
+  env.gain.exponentialRampToValueAtTime(0.001, t + 0.048);
+  osc.connect(env); env.connect(ac.destination);
+  osc.start(t); osc.stop(t + 0.052);
+}
+
+function scheduleMetro() {
+  const ac = getAC();
+  while (metroNextTime < ac.currentTime + 0.1) {
+    const beat = metroBeat;
+    metroClick(ac, metroNextTime, beat % 4 === 0);
+    const delay = Math.max(0, (metroNextTime - ac.currentTime) * 1000);
+    setTimeout(() => {
+      const btn = document.getElementById('metroBtn');
+      if (!btn) return;
+      btn.classList.add('beat');
+      setTimeout(() => btn.classList.remove('beat'), 80);
+    }, delay);
+    metroBeat++;
+    metroNextTime += 60 / metroBpm;
+  }
+  metroTO = setTimeout(scheduleMetro, 25);
+}
+
+function startMetro() {
+  metroActive = true;
+  metroBeat = 0;
+  metroNextTime = getAC().currentTime + 0.05;
+  document.getElementById('metroBtn').classList.add('active');
+  scheduleMetro();
+}
+
+function stopMetro() {
+  metroActive = false;
+  clearTimeout(metroTO); metroTO = null;
+  const btn = document.getElementById('metroBtn');
+  if (btn) btn.classList.remove('active', 'beat');
+}
+
+function setMetroBpm(v) {
+  metroBpm = Math.max(40, Math.min(240, v));
+  document.getElementById('msBpm').textContent = metroBpm;
+}
+
+document.getElementById('metroBtn').addEventListener('click', () =>
+  metroActive ? stopMetro() : startMetro()
+);
+
+// ── drag-to-set BPM ──
+const msBtn = document.getElementById('metroSetBtn');
+
+msBtn.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  msBtn.setPointerCapture(e.pointerId);
+  msBtn.classList.add('open');
+  msDragStartX  = e.clientX;
+  msDragStartBpm = metroBpm;
+  msDragging = true;
+});
+
+msBtn.addEventListener('pointermove', e => {
+  if (!msDragging) return;
+  const delta = e.clientX - msDragStartX;
+  setMetroBpm(msDragStartBpm + Math.round(delta / 2));
+  // restart metro with new BPM mid-flight
+  if (metroActive) {
+    clearTimeout(metroTO);
+    metroNextTime = getAC().currentTime + 0.05;
+    metroBeat = 0;
+    scheduleMetro();
+  }
+});
+
+msBtn.addEventListener('pointerup', () => {
+  msDragging = false;
+  setTimeout(() => msBtn.classList.remove('open'), 160);
+});
+
+msBtn.addEventListener('pointercancel', () => {
+  msDragging = false;
+  msBtn.classList.remove('open');
+});
+
+setMetroBpm(120);
 </script>
 </body>
 </html>
