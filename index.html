@@ -707,6 +707,8 @@ function sb(seq){ return seq.reduce((s,n) => s+nb(n), 0); }
 // ═══════════════════════════════════════════════════
 // CONFIG STATE
 // ═══════════════════════════════════════════════════
+const MAX_REPS = 8; // maximum repetitions for scales in sequence or licks
+
 const cfg = {
   mode: 'scale',
   root: 'C',
@@ -714,8 +716,8 @@ const cfg = {
   dir: 'up',
   lickCats: new Set(['step']),
   // scale sub-mode
-  scaleSubMode: 'single',   // 'single' | 'sequence'
-  scaleSequence: [],         // [{root, scale, reps}, ...]
+  scaleSubMode: 'single',  // 'single' | 'sequence'
+  scaleSequence: [],        // [{root, scale, reps}, ...]
   // lick repetitions
   lickReps: 1,
   transpose: 0,
@@ -736,12 +738,12 @@ const seqCursor = {
     this.repsLeft--;
     if (this.repsLeft <= 0) {
       this.itemIdx = (this.itemIdx + 1) % cfg.scaleSequence.length;
-      this.repsLeft = cfg.scaleSequence[this.itemIdx].reps;
+      this.repsLeft = cfg.scaleSequence[this.itemIdx]?.reps || 1;
     }
   },
   current() {
     if (!cfg.scaleSequence.length) return null;
-    return cfg.scaleSequence[this.itemIdx];
+    return cfg.scaleSequence[this.itemIdx] || null;
   }
 };
 
@@ -935,7 +937,7 @@ function buildSeqBldScaleChips() {
 buildSeqBldScaleChips();
 
 function setSeqReps(v) {
-  seqBldReps = Math.max(1, Math.min(8, v));
+  seqBldReps = Math.max(1, Math.min(MAX_REPS, v));
   document.getElementById('seqRepVal').textContent = seqBldReps;
 }
 document.getElementById('seqRepMinus').addEventListener('click', () => setSeqReps(seqBldReps - 1));
@@ -1076,7 +1078,7 @@ document.querySelectorAll('#lickCatChips .chip').forEach(c =>
 
 // Lick repetitions stepper
 function setLickReps(v) {
-  cfg.lickReps = Math.max(1, Math.min(8, v));
+  cfg.lickReps = Math.max(1, Math.min(MAX_REPS, v));
   document.getElementById('lickRepVal').textContent = cfg.lickReps;
 }
 document.getElementById('lickRepMinus').addEventListener('click', () => setLickReps(cfg.lickReps - 1));
