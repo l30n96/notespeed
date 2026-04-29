@@ -1024,7 +1024,7 @@ function renderSeqList() {
     div.draggable = true;
     div.innerHTML = `
       <div class="seq-item-top">
-        <span class="seq-item-label">${item.root} ${scaleLbl}</span>
+        <span class="seq-item-label">${item.root} · ${scaleLbl}</span>
         <button class="seq-btn del" title="Entfernen" data-i="${i}">✕</button>
       </div>
       <span class="seq-item-reps">${item.reps}×</span>
@@ -1040,9 +1040,12 @@ function renderSeqList() {
     // drag events
     div.addEventListener('dragstart', () => {
       dragSrcIdx = i;
-      setTimeout(() => div.classList.add('dragging'), 0);
+      requestAnimationFrame(() => div.classList.add('dragging'));
     });
-    div.addEventListener('dragend', () => div.classList.remove('dragging'));
+    div.addEventListener('dragend', () => {
+      div.classList.remove('dragging');
+      div.classList.remove('drag-over');
+    });
     div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
     div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
     div.addEventListener('drop', e => {
