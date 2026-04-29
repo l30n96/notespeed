@@ -1248,13 +1248,12 @@ document.getElementById('playBtn').addEventListener('click', () =>
 // ═══════════════════════════════════════════════════
 // VEXFLOW RENDERER
 // Note colours are chosen so they look correct after SVG filter:invert(1)
-//   #a20a4f → inverts to #5DF5B0 (--ac green)
-//   #b5a78a → inverts to #4a5875 (--mut grey)
-//   #0a37bd → inverts to #F5C842 (--gd gold)
+//   #a20a4f → inverts to #5DF5B0 (--ac green)  — already-played notes
+//   #0a37bd → inverts to #F5C842 (--gd gold)   — active (next to play) + playback
 // ═══════════════════════════════════════════════════
-const C_ACTIVE = '#a20a4f';
-const C_DONE   = '#b5a78a';
-const C_PLAY   = '#0a37bd';
+const C_ACTIVE = '#0a37bd';  // gold after invert  — note to play next
+const C_DONE   = '#a20a4f';  // green after invert — correctly played notes
+const C_PLAY   = '#0a37bd';  // gold after invert  — playback highlight
 
 function makeVFNote(note, colorOverride) {
   const { StaveNote, Dot, Accidental } = Vex.Flow;
@@ -1546,7 +1545,9 @@ function pitchLoop() {
   const continuousMidi = f2m(freq);
   if (running && sequence.length && sequence[seqIdx]) {
     const targetMidi = sequence[seqIdx].midi - cfg.transpose;
-    lastCents = (continuousMidi - targetMidi) * 100;
+    const rawCents = (continuousMidi - targetMidi) * 100;
+    // Normalise away octave errors from YIN (e.g. C5 detected instead of C4)
+    lastCents = rawCents - Math.round(rawCents / 1200) * 1200;
   } else {
     lastCents = (continuousMidi - Math.round(continuousMidi)) * 100;
   }
