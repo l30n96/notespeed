@@ -236,17 +236,21 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
 .pa{animation:popIn .2s cubic-bezier(.34,1.56,.64,1) forwards}
 
 /* ── SEQUENCE LIST ── */
-.seq-list{display:flex;flex-direction:column;gap:4px;margin-top:6px;max-height:220px;overflow-y:auto}
-.seq-item{display:flex;align-items:center;gap:6px;padding:6px 10px;
+.seq-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;max-height:200px;overflow-y:auto}
+.seq-item{display:flex;flex-direction:column;gap:1px;padding:5px 8px;
   background:var(--surf);border:1.5px solid var(--b1);border-radius:7px;
-  font-family:var(--mono);font-size:11px}
-.seq-item-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.seq-item-reps{color:var(--ac);font-weight:700;flex-shrink:0;margin-right:2px;font-size:10px}
-.seq-btn{background:none;border:1px solid var(--b1);border-radius:4px;color:var(--mut);
-  font-size:11px;width:22px;height:22px;cursor:pointer;
-  display:flex;align-items:center;justify-content:center;transition:all .1s;flex-shrink:0}
-.seq-btn:hover{border-color:var(--b2);color:var(--fg)}
-.seq-btn.del:hover{border-color:var(--rd);color:var(--rd)}
+  font-family:var(--mono);font-size:10px;cursor:grab;position:relative;
+  min-width:78px;max-width:140px;transition:opacity .15s,border-color .12s}
+.seq-item:active{cursor:grabbing}
+.seq-item.dragging{opacity:.35;border-style:dashed}
+.seq-item.drag-over{border-color:var(--ac)}
+.seq-item-top{display:flex;align-items:center;justify-content:space-between;gap:4px}
+.seq-item-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
+.seq-item-reps{color:var(--ac);font-weight:700;flex-shrink:0;font-size:9px}
+.seq-btn{background:none;border:none;color:var(--mut);
+  font-size:10px;width:14px;height:14px;cursor:pointer;padding:0;line-height:1;
+  display:flex;align-items:center;justify-content:center;transition:color .1s;flex-shrink:0}
+.seq-btn.del:hover{color:var(--rd)}
 .seq-empty{text-align:center;padding:14px;font-family:var(--mono);font-size:10px;
   color:var(--mut);border:1.5px dashed var(--b1);border-radius:7px}
 .seq-add-btn{background:var(--ac);color:var(--bg);border:none;border-radius:6px;
@@ -386,8 +390,12 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
           Grundton und Modus wählen, dann hinzufügen
         </div>
         <div class="chips" id="seqBldRoot"></div>
-        <div class="pool-grp-lbl" style="margin-top:5px">Modus/Skala</div>
-        <div class="chips" id="seqBldMode"></div>
+        <div class="pool-grp-lbl" style="margin-top:5px">Modi</div>
+        <div class="chips" id="seqBldModeModes"></div>
+        <div class="pool-grp-lbl" style="margin-top:4px">Pentatonik &amp; Blues</div>
+        <div class="chips" id="seqBldModeBlues"></div>
+        <div class="pool-grp-lbl" style="margin-top:4px">Jazz &amp; Exotisch</div>
+        <div class="chips" id="seqBldModeJazz"></div>
         <div class="cl-row" style="margin-top:7px;flex-wrap:wrap;gap:8px">
           <div class="rep-row">
             <span style="font-family:var(--mono);font-size:10px;color:var(--mut)">Wdh.</span>
@@ -977,21 +985,14 @@ let seqBldReps  = 1;
 
 buildRootChips('seqBldRoot', seqBldRoot, id => { seqBldRoot = id; });
 
+const SEQ_SCALE_GROUPS = [
+  { containerId: 'seqBldModeModes', group: 'modes' },
+  { containerId: 'seqBldModeBlues', group: 'blues' },
+  { containerId: 'seqBldModeJazz',  group: 'jazz'  },
+];
+
 function buildSeqBldScaleChips() {
-  const container = document.getElementById('seqBldMode');
-  container.innerHTML = '';
-  SCALES.forEach(s => {
-    const c = document.createElement('div');
-    c.className = 'chip' + (s.id === seqBldScale ? ' on' : '');
-    c.dataset.id = s.id;
-    c.textContent = s.lbl;
-    c.addEventListener('click', () => {
-      container.querySelectorAll('.chip').forEach(x => x.classList.remove('on'));
-      c.classList.add('on');
-      seqBldScale = s.id;
-    });
-    container.appendChild(c);
-  });
+  buildScaleChips(SEQ_SCALE_GROUPS, seqBldScale, id => { seqBldScale = id; });
 }
 buildSeqBldScaleChips();
 
@@ -1013,34 +1014,51 @@ function renderSeqList() {
   }
   list.style.display  = '';
   empty.style.display = 'none';
+
+  let dragSrcIdx = null;
+
   cfg.scaleSequence.forEach((item, i) => {
     const scaleLbl = SCALES.find(s => s.id === item.scale)?.lbl || item.scale;
     const div = document.createElement('div');
     div.className = 'seq-item';
+    div.draggable = true;
     div.innerHTML = `
-      <span class="seq-item-label">${item.root} · ${scaleLbl}</span>
+      <div class="seq-item-top">
+        <span class="seq-item-label">${item.root} · ${scaleLbl}</span>
+        <button class="seq-btn del" title="Entfernen" data-i="${i}">✕</button>
+      </div>
       <span class="seq-item-reps">${item.reps}×</span>
-      <button class="seq-btn" title="Nach oben" data-action="up" data-i="${i}">↑</button>
-      <button class="seq-btn" title="Nach unten" data-action="dn" data-i="${i}">↓</button>
-      <button class="seq-btn del" title="Entfernen" data-action="del" data-i="${i}">✕</button>
     `;
-    list.appendChild(div);
-  });
-  list.querySelectorAll('.seq-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const idx = +btn.dataset.i;
-      const act = btn.dataset.action;
-      if (act === 'del') {
-        cfg.scaleSequence.splice(idx, 1);
-      } else if (act === 'up' && idx > 0) {
-        [cfg.scaleSequence[idx-1], cfg.scaleSequence[idx]] =
-          [cfg.scaleSequence[idx], cfg.scaleSequence[idx-1]];
-      } else if (act === 'dn' && idx < cfg.scaleSequence.length - 1) {
-        [cfg.scaleSequence[idx], cfg.scaleSequence[idx+1]] =
-          [cfg.scaleSequence[idx+1], cfg.scaleSequence[idx]];
-      }
+
+    // delete
+    div.querySelector('.seq-btn.del').addEventListener('click', e => {
+      e.stopPropagation();
+      cfg.scaleSequence.splice(+e.currentTarget.dataset.i, 1);
       renderSeqList();
     });
+
+    // drag events
+    div.addEventListener('dragstart', () => {
+      dragSrcIdx = i;
+      requestAnimationFrame(() => div.classList.add('dragging'));
+    });
+    div.addEventListener('dragend', () => {
+      div.classList.remove('dragging');
+      div.classList.remove('drag-over');
+    });
+    div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
+    div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+    div.addEventListener('drop', e => {
+      e.preventDefault();
+      div.classList.remove('drag-over');
+      if (dragSrcIdx === null || dragSrcIdx === i) return;
+      const moved = cfg.scaleSequence.splice(dragSrcIdx, 1)[0];
+      cfg.scaleSequence.splice(i, 0, moved);
+      dragSrcIdx = null;
+      renderSeqList();
+    });
+
+    list.appendChild(div);
   });
 }
 renderSeqList();
