@@ -563,7 +563,6 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
       <button class="midi-nav-btn" id="midiOctDnBtn" title="Oktave tiefer" aria-label="Oktave tiefer">8↓</button>
       <span class="midi-pg" id="midiOctLbl">0</span>
       <button class="midi-nav-btn" id="midiOctUpBtn" title="Oktave höher" aria-label="Oktave höher">8↑</button>
-      <button class="midi-nav-btn" id="midiJumpBtn" title="Zur aktiven Note springen" aria-label="Zur aktiven Note springen">⌖</button>
     </div>
     <div class="bottom-bar">
       <div class="metro-wrap">
@@ -1622,6 +1621,16 @@ function getAC() {
 }
 function m2f(midi) { return 440 * Math.pow(2, (midi - 69) / 12); }
 
+// Master gain node for playback — set to 0 on stopPB() to silence scheduled notes
+let pbMasterGain = null;
+function getPbMaster(ac) {
+  if (!pbMasterGain || pbMasterGain.context !== ac) {
+    pbMasterGain = ac.createGain();
+    pbMasterGain.connect(ac.destination);
+  }
+  return pbMasterGain;
+}
+
 function schedNote(freq, t0, dur, gain = 0.35) {
   const ac = getAC();
   const osc = ac.createOscillator(), env = ac.createGain();
@@ -1631,7 +1640,7 @@ function schedNote(freq, t0, dur, gain = 0.35) {
   env.gain.linearRampToValueAtTime(gain, t0 + 0.016);
   env.gain.setValueAtTime(gain, t0 + dur * 0.72);
   env.gain.linearRampToValueAtTime(0, t0 + dur * 0.95);
-  osc.connect(env); env.connect(ac.destination);
+  osc.connect(env); env.connect(getPbMaster(ac));
   osc.start(t0); osc.stop(t0 + dur);
 }
 
@@ -1641,6 +1650,11 @@ let pbTOs = [], isPlaying = false, pbHiIdx = -1;
 function stopPB() {
   pbTOs.forEach(t => clearTimeout(t)); pbTOs = [];
   isPlaying = false; pbHiIdx = -1;
+  // Silence any already-scheduled oscillators immediately
+  if (pbMasterGain && audioCtx) {
+    pbMasterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+    pbMasterGain.gain.setValueAtTime(0, audioCtx.currentTime);
+  }
   document.getElementById('playBtn').classList.remove('playing');
   document.getElementById('playLabel').textContent = 'Vorspielen';
   renderDots();
@@ -1652,6 +1666,8 @@ function playSeq(seq) {
   document.getElementById('playBtn').classList.add('playing');
   document.getElementById('playLabel').textContent = 'Stop ◼';
   const ac = getAC();
+  // (Re-)enable master gain for this playback session
+  getPbMaster(ac).gain.setValueAtTime(1, ac.currentTime);
   const bpm = cfg.mode === 'scale' ? BPM_SC : BPM_LK;
   const qd = 60 / bpm;
   let t = ac.currentTime + 0.05;
@@ -1852,9 +1868,11 @@ function buildSepLabel(meta, prevMeta) {
   if (!meta) return '▶';
   const scaleLbl = SCALES.find(s => s.id === meta.scale)?.lbl || meta.scale;
   if (meta.mode === 'scale') {
-    const name = meta.root + ' ' + scaleLbl;
+    const dirLbl = meta.dir === 'down' ? ' ↓' : meta.dir === 'up' ? ' ↑' : ' ↕';
+    const name = meta.root + ' ' + scaleLbl + dirLbl;
     const isRepeat = prevMeta && prevMeta.mode === 'scale' &&
-                     prevMeta.root === meta.root && prevMeta.scale === meta.scale;
+                     prevMeta.root === meta.root && prevMeta.scale === meta.scale &&
+                     prevMeta.dir === meta.dir;
     return isRepeat ? `↺  Wiederholung  —  ${name}` : `▶  ${name}`;
   }
   // lick mode
@@ -1936,7 +1954,8 @@ function renderStaff(animate) {
   const playOffset = isMidi ? midiPlayStart : (isScroll ? scPlayStart : 0);
 
   const midiHitAreas = []; // [{noteIdx, x, y}] for click-to-jump (MIDI only)
-  const sepsToDraw   = []; // [{y, meta, prevMeta}] collected during bar loop
+  const sepsToDraw       = []; // [{y, meta, prevMeta}] full-row separators (col=0)
+  const inlineSepsToDraw = []; // [{x, y, meta, prevMeta}] mid-row separators (col>0)
 
   let gi = 0;
   barGroups.forEach((barArr, bi) => {
@@ -1949,10 +1968,13 @@ function renderStaff(animate) {
     if (bi === 0 || isRoundFirstBar) { stave.addClef('treble'); }
     if (bi === 0) stave.addTimeSignature('4/4');
 
-    // Collect separator data before drawing (col=0 round starts only, not the very first bar)
+    // Collect separator data before drawing — col=0: full-row separator; col>0: inline label
     if (isRoundFirstBar && bi > 0 && col === 0) {
       const gim = roundMetaByGI.get(gi);
       sepsToDraw.push({ y: sy - SC_SEP_H * 0.5, meta: gim?.meta, prevMeta: gim?.prevMeta });
+    } else if (isRoundFirstBar && bi > 0 && col > 0) {
+      const gim = roundMetaByGI.get(gi);
+      inlineSepsToDraw.push({ x: sx, y: sy - 6, meta: gim?.meta, prevMeta: gim?.prevMeta });
     }
 
     stave.setContext(ctx).draw();
@@ -2035,7 +2057,7 @@ function renderStaff(animate) {
     svg.style.height = H + 'px';
 
     // ── Draw round-separator lines directly into the SVG ──
-    if (isScroll && sepsToDraw.length) {
+    if (isScroll && (sepsToDraw.length || inlineSepsToDraw.length)) {
       const NS = 'http://www.w3.org/2000/svg';
       for (const sep of sepsToDraw) {
         const line = document.createElementNS(NS, 'line');
@@ -2059,14 +2081,30 @@ function renderStaff(animate) {
         text.textContent = lbl;
         svg.appendChild(text);
       }
+      // ── Inline labels for mid-row round starts (col > 0) ──
+      for (const sep of inlineSepsToDraw) {
+        const lbl = buildSepLabel(sep.meta, sep.prevMeta);
+        const text = document.createElementNS(NS, 'text');
+        text.setAttribute('x', String(sep.x + 2));
+        text.setAttribute('y', String(sep.y));
+        text.setAttribute('fill', SC_SEP_TEXT_CLR);
+        text.setAttribute('font-size', '10');
+        text.setAttribute('font-family', 'sans-serif');
+        text.setAttribute('font-weight', 'bold');
+        text.textContent = lbl;
+        svg.appendChild(text);
+      }
     }
 
     if (useScroll) {
-      // ── Auto-scroll to keep active note visible ──
-      if (seqIdx >= 0 && seqIdx < sequence.length && barGroups.length) {
+      // ── Auto-scroll: follow playback note when playing, otherwise follow seqIdx ──
+      const scrollTarget = (isPlaying && pbHiIdx >= 0)
+        ? playOffset + pbHiIdx
+        : seqIdx;
+      if (scrollTarget >= 0 && scrollTarget < sequence.length && barGroups.length) {
         let count = 0, activeBar = 0;
         for (let bi = 0; bi < barGroups.length; bi++) {
-          if (count + barGroups[bi].length > seqIdx) { activeBar = bi; break; }
+          if (count + barGroups[bi].length > scrollTarget) { activeBar = bi; break; }
           count += barGroups[bi].length;
         }
         const activeRow = Math.floor(activeBar / bpr);
@@ -2667,11 +2705,6 @@ document.getElementById('midiOctUpBtn').addEventListener('click', () => {
   updateMidiOctLbl();
   if (running && cfg.mode === 'midi') renderStaff(false);
 });
-document.getElementById('midiJumpBtn').addEventListener('click', () => {
-  if (cfg.mode === 'midi' && sequence.length) {
-    renderStaff(false); // re-render triggers auto-scroll to seqIdx
-  }
-});
 
 // ═══════════════════════════════════════════════════
 // METRONOME
@@ -2769,12 +2802,7 @@ msBtn.addEventListener('pointermove', e => {
   if (!msDragging) return;
   const delta = e.clientX - msDragStartX;
   setMetroBpm(msDragStartBpm + Math.round(delta / 2));
-  // Apply new BPM mid-flight without disrupting the accent-beat counter
-  if (metroActive) {
-    clearTimeout(metroTO);
-    metroNextTime = getAC().currentTime + 0.05;
-    scheduleMetro();
-  }
+  // metroBpm updated; running scheduleMetro() picks it up on next tick — no restart needed
 });
 
 msBtn.addEventListener('pointerup', () => {
