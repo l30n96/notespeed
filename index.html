@@ -1878,7 +1878,7 @@ function buildSepLabel(meta, prevMeta) {
     return isRepeat ? `↺  Wiederholung  —  ${name}` : `▶  ${name}`;
   }
   // lick mode
-  const lickName = meta.lick?.name || meta.lick?.desc || 'Lick';
+  const lickName = (meta.lick && (meta.lick.name || meta.lick.desc)) || 'Lick';
   const isRepeat = prevMeta && prevMeta.mode === 'lick' && prevMeta.lick === meta.lick;
   return isRepeat ? `↺  Wiederholung  —  ${lickName}` : `▶  ${lickName}`;
 }
@@ -1886,6 +1886,7 @@ function buildSepLabel(meta, prevMeta) {
 const SC_SEP_H        = 34;       // extra vertical gap (px) inserted before each round-separator row
 const SC_SEP_LINE_CLR = '#3a3a3a'; // separator line colour (dark; inverts to light gray on dark bg)
 const SC_SEP_TEXT_CLR = '#2a2a2a'; // separator label colour (dark; inverts to near-white)
+const SC_MIN_BAR_W    = 90;        // minimum stave width (px) for partial bars in scroll mode
 
 function renderStaff(animate) {
   const { Renderer, Stave, Voice, Formatter, Beam } = Vex.Flow;
@@ -1981,7 +1982,7 @@ function renderStaff(animate) {
     // are spaced tightly and the right barline sits close to the last note.
     const filledBeats = sb(barArr);
     const isPartialBar = isScroll && filledBeats < 3.99;
-    const staveW = isPartialBar ? Math.max((barW - 5) * (filledBeats / 4), 90) : barW - 5;
+    const staveW = isPartialBar ? Math.max((barW - 5) * (filledBeats / 4), SC_MIN_BAR_W) : barW - 5;
 
     const stave = new Stave(sx, sy, staveW);
     const isRoundFirstBar = roundStarts.has(gi);
