@@ -1403,8 +1403,8 @@ function midiTrackNotes(events, ppq, chFilter) {
   for (const ev of events) {
     if (ev.type === 'name') { name = ev.name; continue; }
     if (ev.ch === 9) continue; // skip drums (channel 10)
-    channels.add(ev.ch);
     if (channelFilter >= 0 && ev.ch !== channelFilter) continue; // channel filter
+    channels.add(ev.ch); // only count channels that pass the filter
     if (ev.type === 'on') {
       active[ev.note + '_' + ev.ch] = ev.tick;
     } else if (ev.type === 'off') {
@@ -1770,7 +1770,7 @@ function trimScrollBuffer() {
   const trimN = scOffsets[cut];
   if (!trimN) return;
   sequence   = sequence.slice(trimN);
-  seqIdx    -= trimN;
+  seqIdx    = Math.max(0, seqIdx - trimN);
   scPlayStart = Math.max(0, scPlayStart - trimN);
   scOffsets  = scOffsets.slice(cut).map(o => o - trimN);
   scRounds   = scRounds.slice(cut);
@@ -1778,8 +1778,9 @@ function trimScrollBuffer() {
   // Re-key seqAccuracy
   const na = [];
   Object.keys(seqAccuracy).forEach(k => {
-    const nk = +k - trimN;
-    if (nk >= 0) na[nk] = seqAccuracy[+k];
+    const numKey = +k;
+    const nk = numKey - trimN;
+    if (nk >= 0) na[nk] = seqAccuracy[numKey];
   });
   seqAccuracy = na;
 }
@@ -2582,13 +2583,16 @@ function updateMidiOctLbl() {
   lbl.textContent = s === 0 ? '0' : (s > 0 ? '+' + s : '' + s);
 }
 
+// Octave shift clamp bounds
+const MIDI_OCTAVE_SHIFT_MAX = 2;
+
 document.getElementById('midiOctDnBtn').addEventListener('click', () => {
-  cfg.midiOctaveShift = Math.max(-2, cfg.midiOctaveShift - 1);
+  cfg.midiOctaveShift = Math.max(-MIDI_OCTAVE_SHIFT_MAX, cfg.midiOctaveShift - 1);
   updateMidiOctLbl();
   if (running && cfg.mode === 'midi') renderStaff(false);
 });
 document.getElementById('midiOctUpBtn').addEventListener('click', () => {
-  cfg.midiOctaveShift = Math.min(2, cfg.midiOctaveShift + 1);
+  cfg.midiOctaveShift = Math.min(MIDI_OCTAVE_SHIFT_MAX, cfg.midiOctaveShift + 1);
   updateMidiOctLbl();
   if (running && cfg.mode === 'midi') renderStaff(false);
 });
