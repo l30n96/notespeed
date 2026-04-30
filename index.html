@@ -245,10 +245,21 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
 .seq-item{display:flex;flex-direction:column;gap:1px;padding:5px 8px;
   background:var(--surf);border:1.5px solid var(--b1);border-radius:7px;
   font-family:var(--mono);font-size:10px;cursor:grab;position:relative;
-  min-width:78px;max-width:140px;transition:opacity .15s,border-color .12s}
+  min-width:78px;max-width:140px;touch-action:none;
+  transition:transform .13s,opacity .13s,border-color .12s}
 .seq-item:active{cursor:grabbing}
-.seq-item.dragging{opacity:.35;border-style:dashed}
-.seq-item.drag-over{border-color:var(--ac)}
+.seq-item.seq-lift{opacity:.25;border-style:dashed}
+/* inset box-shadow avoids layout reflow from border-width changes */
+.seq-item.drag-before{box-shadow:inset 3px 0 0 var(--ac);transform:translateX(6px)}
+.seq-item.drag-after {box-shadow:inset -3px 0 0 var(--ac);transform:translateX(-6px)}
+/* ghost: fixed-position clone that follows the pointer */
+.seq-ghost{position:fixed;pointer-events:none;z-index:500;
+  display:flex;flex-direction:column;gap:1px;padding:5px 8px;
+  background:var(--surf);border:1.5px solid var(--ac);border-radius:7px;
+  font-family:var(--mono);font-size:10px;
+  box-shadow:0 8px 28px rgba(0,0,0,.55);opacity:.92;transition:none;
+  min-width:78px;max-width:140px;white-space:nowrap}
+.seq-ghost .seq-item-reps{color:var(--ac);font-weight:700;font-size:9px}
 .seq-item-top{display:flex;align-items:center;justify-content:space-between;gap:4px}
 .seq-item-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
 .seq-item-reps{color:var(--ac);font-weight:700;flex-shrink:0;font-size:9px}
@@ -1010,6 +1021,18 @@ buildRootChips('singleRootChips', cfg.root, id => { cfg.root = id; });
 // ═══════════════════════════════════════════════════
 function setScaleSubMode(mode) {
   cfg.scaleSubMode = mode;
+  // Re-sync cfg.root/scale from chip state when returning to single mode.
+  // Sequence mode mutates cfg.root/scale during play; without this sync
+  // the game would start with the last sequence item's root/scale instead
+  // of the user's chip selection.
+  if (mode === 'single') {
+    const ar = document.querySelector('#singleRootChips .chip.on');
+    if (ar) cfg.root = ar.dataset.root;
+    SINGLE_SCALE_GROUPS.forEach(g => {
+      const sc = document.querySelector('#' + g.containerId + ' .chip.on');
+      if (sc) cfg.scale = sc.dataset.id;
+    });
+  }
   document.querySelectorAll('#scaleModeChips .chip').forEach(c =>
     c.classList.toggle('on', c.dataset.smode === mode)
   );
@@ -1059,13 +1082,11 @@ function renderSeqList() {
   list.style.display  = '';
   empty.style.display = 'none';
 
-  let dragSrcIdx = null;
-
   cfg.scaleSequence.forEach((item, i) => {
     const scaleLbl = SCALES.find(s => s.id === item.scale)?.lbl || item.scale;
     const div = document.createElement('div');
     div.className = 'seq-item';
-    div.draggable = true;
+    div.dataset.seqI = i;
     div.innerHTML = `
       <div class="seq-item-top">
         <span class="seq-item-label">${item.root} · ${scaleLbl}</span>
@@ -1081,26 +1102,91 @@ function renderSeqList() {
       renderSeqList();
     });
 
-    // drag events
-    div.addEventListener('dragstart', () => {
-      dragSrcIdx = i;
-      requestAnimationFrame(() => div.classList.add('dragging'));
-    });
-    div.addEventListener('dragend', () => {
-      div.classList.remove('dragging');
-      div.classList.remove('drag-over');
-    });
-    div.addEventListener('dragover', e => { e.preventDefault(); div.classList.add('drag-over'); });
-    div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
-    div.addEventListener('drop', e => {
+    // ── Pointer-based drag (works on mouse + touch) ──
+    let isDragging = false, ghost = null, startX = 0, startY = 0, srcIdx = i;
+
+    div.addEventListener('pointerdown', e => {
+      if (e.target.closest('.seq-btn')) return;
       e.preventDefault();
-      div.classList.remove('drag-over');
-      if (dragSrcIdx === null || dragSrcIdx === i) return;
-      const moved = cfg.scaleSequence.splice(dragSrcIdx, 1)[0];
-      cfg.scaleSequence.splice(i, 0, moved);
-      dragSrcIdx = null;
-      renderSeqList();
+      div.setPointerCapture(e.pointerId);
+      startX = e.clientX;
+      startY = e.clientY;
+      srcIdx = i;          // capture at drag start — safe even after re-renders
+      isDragging = false;
     });
+
+    div.addEventListener('pointermove', e => {
+      if (!div.hasPointerCapture(e.pointerId)) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+
+      if (!isDragging) {
+        if (Math.hypot(dx, dy) < 5) return;
+        isDragging = true;
+        // Build a fixed-position ghost clone that follows the pointer
+        const rect = div.getBoundingClientRect();
+        ghost = document.createElement('div');
+        ghost.className = 'seq-ghost';
+        ghost.innerHTML = div.innerHTML;
+        Object.assign(ghost.style, {
+          left:  rect.left + 'px',
+          top:   rect.top  + 'px',
+          width: rect.width + 'px',
+        });
+        document.body.appendChild(ghost);
+        div.classList.add('seq-lift');
+      }
+
+      ghost.style.transform = `translate(${dx}px,${dy}px)`;
+
+      // Reset per-item indicators
+      list.querySelectorAll('.seq-item').forEach(el => {
+        el.classList.remove('drag-before', 'drag-after');
+      });
+
+      // Find which item the pointer is hovering over and show gap indicator
+      const items = [...list.querySelectorAll('.seq-item:not(.seq-lift)')];
+      for (const el of items) {
+        const r = el.getBoundingClientRect();
+        if (e.clientX >= r.left && e.clientX <= r.right &&
+            e.clientY >= r.top  && e.clientY <= r.bottom) {
+          el.classList.add(e.clientX < r.left + r.width * 0.5 ? 'drag-before' : 'drag-after');
+          break;
+        }
+      }
+    });
+
+    const commitDrag = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      if (ghost) { ghost.remove(); ghost = null; }
+
+      const allItems = [...list.querySelectorAll('.seq-item')];
+      let insertIdx = null;
+      allItems.forEach((el, j) => {
+        if      (el.classList.contains('drag-before')) insertIdx = j;
+        else if (el.classList.contains('drag-after'))  insertIdx = j + 1;
+        el.classList.remove('drag-before', 'drag-after', 'seq-lift');
+      });
+      div.classList.remove('seq-lift');
+
+      if (insertIdx !== null) {
+        const moved = cfg.scaleSequence.splice(srcIdx, 1)[0];
+        cfg.scaleSequence.splice(insertIdx > srcIdx ? insertIdx - 1 : insertIdx, 0, moved);
+      }
+      renderSeqList();
+    };
+
+    const cancelDrag = () => {
+      isDragging = false;
+      if (ghost) { ghost.remove(); ghost = null; }
+      list.querySelectorAll('.seq-item').forEach(el =>
+        el.classList.remove('drag-before', 'drag-after', 'seq-lift')
+      );
+    };
+
+    div.addEventListener('pointerup',     commitDrag);
+    div.addEventListener('pointercancel', cancelDrag);
 
     list.appendChild(div);
   });
@@ -1127,6 +1213,15 @@ document.querySelectorAll('#modeTiles .mt-tile').forEach(t =>
     document.getElementById('cfgScale').style.display = cfg.mode === 'scale' ? '' : 'none';
     document.getElementById('cfgLick').style.display  = cfg.mode === 'lick'  ? '' : 'none';
     document.getElementById('cfgMidi').style.display  = cfg.mode === 'midi'  ? '' : 'none';
+    // When switching back to scale, re-sync root/scale from chips for single mode
+    if (cfg.mode === 'scale' && cfg.scaleSubMode === 'single') {
+      const ar = document.querySelector('#singleRootChips .chip.on');
+      if (ar) cfg.root = ar.dataset.root;
+      SINGLE_SCALE_GROUPS.forEach(g => {
+        const sc = document.querySelector('#' + g.containerId + ' .chip.on');
+        if (sc) cfg.scale = sc.dataset.id;
+      });
+    }
   })
 );
 
