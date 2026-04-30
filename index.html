@@ -560,10 +560,10 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
     <div class="midi-bar" id="midiBar" style="display:none">
       <span class="midi-ch-lbl">CH</span>
       <div id="midiChChips" class="chips" style="flex:1;gap:3px;min-width:0;flex-wrap:wrap"></div>
-      <button class="midi-nav-btn" id="midiOctDnBtn" title="Oktave tiefer">8↓</button>
+      <button class="midi-nav-btn" id="midiOctDnBtn" title="Oktave tiefer" aria-label="Oktave tiefer">8↓</button>
       <span class="midi-pg" id="midiOctLbl">0</span>
-      <button class="midi-nav-btn" id="midiOctUpBtn" title="Oktave höher">8↑</button>
-      <button class="midi-nav-btn" id="midiJumpBtn" title="Zur aktiven Note springen">⌖</button>
+      <button class="midi-nav-btn" id="midiOctUpBtn" title="Oktave höher" aria-label="Oktave höher">8↑</button>
+      <button class="midi-nav-btn" id="midiJumpBtn" title="Zur aktiven Note springen" aria-label="Zur aktiven Note springen">⌖</button>
     </div>
     <div class="bottom-bar">
       <div class="metro-wrap">
@@ -1335,8 +1335,10 @@ updateLickStatus();
 // ═══════════════════════════════════════════════════
 // MIDI PARSER & PLAYBACK MODE
 // ═══════════════════════════════════════════════════
-const MIDI_VIEW_SIZE = 16;   // notes per viewport page (used for play-preview slice)
-let midiPlayStart = 0;       // absolute note index where current play-preview started
+const MIDI_VIEW_SIZE = 16;        // notes per viewport page (used for play-preview slice)
+const MIDI_CLICK_THRESHOLD = 80;  // max px distance to snap click to nearest note
+const MIDI_DOT_HALF_WINDOW = 14;  // half the dot-strip window (28 dots total)
+let midiPlayStart = 0;            // absolute note index where current play-preview started
 
 function parseMidi(buffer) {
   const dv = new DataView(buffer);
@@ -1388,12 +1390,12 @@ function midiTrackNotes(events, ppq, chFilter) {
   const active = {};
   const raw = [];
   const channels = new Set();
-  const chF = (chFilter === undefined || chFilter === null) ? -1 : chFilter;
+  const channelFilter = (chFilter === undefined || chFilter === null) ? -1 : chFilter;
   for (const ev of events) {
     if (ev.type === 'name') { name = ev.name; continue; }
     if (ev.ch === 9) continue; // skip drums (channel 10)
     channels.add(ev.ch);
-    if (chF >= 0 && ev.ch !== chF) continue; // channel filter
+    if (channelFilter >= 0 && ev.ch !== channelFilter) continue; // channel filter
     if (ev.type === 'on') {
       active[ev.note + '_' + ev.ch] = ev.tick;
     } else if (ev.type === 'off') {
@@ -1841,7 +1843,7 @@ function renderStaff(animate) {
           const dist = Math.hypot(x - cx, y - cy);
           if (dist < minDist) { minDist = dist; closest = noteIdx; }
         }
-        if (closest >= 0 && minDist < 80) {
+        if (closest >= 0 && minDist < MIDI_CLICK_THRESHOLD) {
           seqIdx = Math.max(0, Math.min(sequence.length - 1, closest));
           renderStaff(false); renderDots(); updateNH();
         }
@@ -1874,7 +1876,7 @@ function renderDots() {
     const total = sequence.length;
     const max = Math.min(total, 28);
     // Show a window of 28 dots centred on seqIdx
-    const winStart = Math.max(0, Math.min(seqIdx - 14, total - max));
+    const winStart = Math.max(0, Math.min(seqIdx - MIDI_DOT_HALF_WINDOW, total - max));
     for (let ii = 0; ii < max; ii++) {
       const i = winStart + ii;
       const d = document.createElement('div');
