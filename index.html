@@ -1878,8 +1878,9 @@ function buildSepLabel(meta, prevMeta) {
     return isRepeat ? `↺  Wiederholung  —  ${name}` : `▶  ${name}`;
   }
   // lick mode
+  const lickName = meta.lick?.name || meta.lick?.desc || 'Lick';
   const isRepeat = prevMeta && prevMeta.mode === 'lick' && prevMeta.lick === meta.lick;
-  return isRepeat ? '↺  Wiederholung' : '▶  Lick';
+  return isRepeat ? `↺  Wiederholung  —  ${lickName}` : `▶  ${lickName}`;
 }
 
 const SC_SEP_H        = 34;       // extra vertical gap (px) inserted before each round-separator row
@@ -1901,44 +1902,53 @@ function renderStaff(animate) {
   const card = document.getElementById('staffCard');
   const W = Math.max(200, card.clientWidth * 0.97);
 
-  // Group notes into 4-beat bars
-  const barGroups = [];
-  let curBar = [], curB = 0;
-  for (const note of sequence) {
+  // Set of global note indices where a new round starts (for clef markers + separators)
+  const roundStarts = isScroll ? new Set(scOffsets.slice(1)) : new Set();
+
+  // Group notes into 4-beat bars; in scroll mode also split at round boundaries
+  // so every round always begins a fresh bar (even if previous bar was partial).
+  const barGroups  = [];
+  const barStartGIs = []; // global note index at the start of each bar
+  let curBar = [], curB = 0, barStartNI = 0;
+  for (let ni = 0; ni < sequence.length; ni++) {
+    const note = sequence[ni];
     const b = nb(note);
-    if (curB + b > 4.005 && curBar.length) { barGroups.push(curBar); curBar = []; curB = 0; }
+    const atRoundBound = isScroll && curBar.length > 0 && roundStarts.has(ni);
+    if (atRoundBound || (curB + b > 4.005 && curBar.length)) {
+      barGroups.push(curBar); barStartGIs.push(barStartNI);
+      curBar = []; curB = 0; barStartNI = ni;
+    }
     curBar.push(note); curB += b;
   }
-  if (curBar.length) barGroups.push(curBar);
+  if (curBar.length) { barGroups.push(curBar); barStartGIs.push(barStartNI); }
 
   const numBars = barGroups.length;
-  // Scale/lick scroll: one bar per row so every round boundary is always at col=0
-  // and always receives a full-width separator line.  MIDI keeps 2 bars per row.
+  // Scale/lick scroll: one bar per row so every round boundary is always at col=0.
+  // MIDI keeps 2 bars per row.
   const bpr     = isScroll ? 1 : (numBars <= 2 ? numBars : (W < 400 ? 1 : 2));
   const rows    = Math.ceil(numBars / bpr);
   const barW    = (W - 18) / bpr;
 
-  // Set of global note indices where a new round starts (for clef markers + separators)
-  const roundStarts = isScroll ? new Set(scOffsets.slice(1)) : new Set();
-
-  // Map from global note index → {meta, prevMeta} for separator labels
+  // Map from global note index → {meta, prevMeta} for separator labels.
+  // Index 0 is included for the header at the top of the staff.
   const roundMetaByGI = new Map();
   if (isScroll) {
     scOffsets.forEach((off, r) => {
-      if (r > 0) roundMetaByGI.set(off, { meta: scRounds[r]?.meta, prevMeta: scRounds[r - 1]?.meta });
+      const prevMeta = r > 0 ? scRounds[r - 1]?.meta : null;
+      roundMetaByGI.set(off, { meta: scRounds[r]?.meta, prevMeta });
     });
   }
 
-  // Per-bar extra Y offset due to separator gaps inserted before each round-separator row
+  // Per-bar extra Y offset due to separator gaps.
+  // A header gap is always added at the very top so round 0 gets a label.
   const barExtraY = new Array(barGroups.length).fill(0);
   let accumSepY = 0;
   if (isScroll) {
-    let gi2 = 0;
+    accumSepY += SC_SEP_H; // space for the round-0 header label
     for (let bi = 0; bi < barGroups.length; bi++) {
-      // With bpr=1 every bar is at col=0, so every round start gets a separator gap
-      if (bi > 0 && roundStarts.has(gi2)) accumSepY += SC_SEP_H;
+      const bgi = barStartGIs[bi];
+      if (bi > 0 && roundStarts.has(bgi)) accumSepY += SC_SEP_H;
       barExtraY[bi] = accumSepY;
-      gi2 += barGroups[bi].length;
     }
   }
 
@@ -1967,13 +1977,23 @@ function renderStaff(animate) {
     const sx  = 9 + col * barW;
     const sy  = row * rowH + rowH * 0.16 + barExtraY[bi];
 
-    const stave = new Stave(sx, sy, barW - 5);
+    // For partial bars in scroll mode (< 4 beats) shrink the stave so notes
+    // are spaced tightly and the right barline sits close to the last note.
+    const filledBeats = sb(barArr);
+    const isPartialBar = isScroll && filledBeats < 3.99;
+    const staveW = isPartialBar ? Math.max((barW - 5) * (filledBeats / 4), 90) : barW - 5;
+
+    const stave = new Stave(sx, sy, staveW);
     const isRoundFirstBar = roundStarts.has(gi);
     if (bi === 0 || isRoundFirstBar) { stave.addClef('treble'); }
     if (bi === 0) stave.addTimeSignature('4/4');
 
-    // Collect separator data before drawing — always a full-row separator since bpr=1
-    if (isRoundFirstBar && bi > 0) {
+    // Collect separator / header label data
+    if (bi === 0 && isScroll) {
+      // Header label at very top for round 0
+      const gim = roundMetaByGI.get(0);
+      sepsToDraw.push({ y: SC_SEP_H * 0.55, meta: gim?.meta, prevMeta: null, isHeader: true });
+    } else if (isRoundFirstBar && bi > 0) {
       const gim = roundMetaByGI.get(gi);
       sepsToDraw.push({ y: sy - SC_SEP_H * 0.5, meta: gim?.meta, prevMeta: gim?.prevMeta });
     }
@@ -2027,7 +2047,7 @@ function renderStaff(animate) {
     voice.setStrict(false);
     voice.addTickables(padded);
 
-    try { new Formatter().joinVoices([voice]).format([voice], barW - 70); } catch(e) {}
+    try { new Formatter().joinVoices([voice]).format([voice], staveW - 65); } catch(e) {}
     voice.draw(ctx, stave);
 
     // Collect note positions for MIDI click-to-jump (after draw so absoluteX is available)
@@ -2061,22 +2081,24 @@ function renderStaff(animate) {
     if (isScroll && sepsToDraw.length) {
       const NS = 'http://www.w3.org/2000/svg';
       for (const sep of sepsToDraw) {
-        const line = document.createElementNS(NS, 'line');
-        line.setAttribute('x1', '9');
-        line.setAttribute('y1', String(sep.y));
-        line.setAttribute('x2', String(W - 9));
-        line.setAttribute('y2', String(sep.y));
-        line.setAttribute('stroke', SC_SEP_LINE_CLR);
-        line.setAttribute('stroke-width', '1.5');
-        line.setAttribute('stroke-dasharray', '7 4');
-        svg.appendChild(line);
+        if (!sep.isHeader) {
+          const line = document.createElementNS(NS, 'line');
+          line.setAttribute('x1', '9');
+          line.setAttribute('y1', String(sep.y));
+          line.setAttribute('x2', String(W - 9));
+          line.setAttribute('y2', String(sep.y));
+          line.setAttribute('stroke', SC_SEP_LINE_CLR);
+          line.setAttribute('stroke-width', '1.5');
+          line.setAttribute('stroke-dasharray', '7 4');
+          svg.appendChild(line);
+        }
 
         const lbl = buildSepLabel(sep.meta, sep.prevMeta);
         const text = document.createElementNS(NS, 'text');
         text.setAttribute('x', '13');
-        text.setAttribute('y', String(sep.y - 6));
+        text.setAttribute('y', String(sep.isHeader ? sep.y : sep.y - 6));
         text.setAttribute('fill', SC_SEP_TEXT_CLR);
-        text.setAttribute('font-size', '11');
+        text.setAttribute('font-size', sep.isHeader ? '13' : '11');
         text.setAttribute('font-family', 'sans-serif');
         text.setAttribute('font-weight', 'bold');
         text.textContent = lbl;
