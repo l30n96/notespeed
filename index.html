@@ -489,7 +489,7 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
 <!-- ══ STAGE ══ -->
 <div id="stageWrap">
   <div class="sc" id="staffCard">
-    <div id="noteFlash"></div>
+    <div id="noteFlash" role="status" aria-live="polite" aria-label="Notengenauigkeit"></div>
     <div class="info-bar" id="infoBar">
       <span class="ib-mode" id="ibMode">TONLEITER</span>
       <span class="ib-name" id="ibName">C major</span>
@@ -1482,6 +1482,7 @@ let lastFiredKey = null, lastFiredT = 0;
 let lastCents = 0;
 
 // ─── TUNER HELPERS ───
+const MAX_CENTS_DEV = 50;  // ±50¢ = one semitone
 function lerpColor(a, b, t) {
   return `rgb(${Math.round(a[0]+(b[0]-a[0])*t)},${Math.round(a[1]+(b[1]-a[1])*t)},${Math.round(a[2]+(b[2]-a[2])*t)})`;
 }
@@ -1490,7 +1491,7 @@ const TUNER_YELLOW = [245,200,66];   // --gd  (±25¢)
 const TUNER_RED    = [245,90,66];    // --rd  (±50¢)
 
 function accuracyColor(centsAbs) {
-  const t = Math.min(1, centsAbs / 50);
+  const t = Math.min(1, centsAbs / MAX_CENTS_DEV);
   if (t <= 0.5) return lerpColor(TUNER_GREEN, TUNER_YELLOW, t * 2);
   return lerpColor(TUNER_YELLOW, TUNER_RED, (t - 0.5) * 2);
 }
@@ -1659,7 +1660,7 @@ function onNote(name, oct, midi) {
     }
   } else {
     streak = 0;
-    flashNoteAccuracy(50);
+    flashNoteAccuracy(MAX_CENTS_DEV);
     card.classList.add('fb');
     clearTimeout(flashTO);
     flashTO = setTimeout(() => card.classList.remove('fb'), 280);
