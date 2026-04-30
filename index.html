@@ -1650,10 +1650,12 @@ let pbTOs = [], isPlaying = false, pbHiIdx = -1;
 function stopPB() {
   pbTOs.forEach(t => clearTimeout(t)); pbTOs = [];
   isPlaying = false; pbHiIdx = -1;
-  // Silence any already-scheduled oscillators immediately
-  if (pbMasterGain && audioCtx) {
-    pbMasterGain.gain.cancelScheduledValues(audioCtx.currentTime);
-    pbMasterGain.gain.setValueAtTime(0, audioCtx.currentTime);
+  // Disconnect the master gain node entirely so any already-scheduled
+  // oscillators from this session have no audio path and cannot bleed
+  // into the next playback session when gain is re-enabled.
+  if (pbMasterGain) {
+    try { pbMasterGain.disconnect(); } catch(e) {}
+    pbMasterGain = null;
   }
   document.getElementById('playBtn').classList.remove('playing');
   document.getElementById('playLabel').textContent = 'Vorspielen';
@@ -1910,7 +1912,9 @@ function renderStaff(animate) {
   if (curBar.length) barGroups.push(curBar);
 
   const numBars = barGroups.length;
-  const bpr     = numBars <= 2 ? numBars : (W < 400 ? 1 : 2);
+  // Scale/lick scroll: one bar per row so every round boundary is always at col=0
+  // and always receives a full-width separator line.  MIDI keeps 2 bars per row.
+  const bpr     = isScroll ? 1 : (numBars <= 2 ? numBars : (W < 400 ? 1 : 2));
   const rows    = Math.ceil(numBars / bpr);
   const barW    = (W - 18) / bpr;
 
@@ -1925,13 +1929,14 @@ function renderStaff(animate) {
     });
   }
 
-  // Per-bar extra Y offset due to separator gaps (only inserted at col=0 round starts)
+  // Per-bar extra Y offset due to separator gaps inserted before each round-separator row
   const barExtraY = new Array(barGroups.length).fill(0);
   let accumSepY = 0;
   if (isScroll) {
     let gi2 = 0;
     for (let bi = 0; bi < barGroups.length; bi++) {
-      if (bi > 0 && roundStarts.has(gi2) && (bi % bpr) === 0) accumSepY += SC_SEP_H;
+      // With bpr=1 every bar is at col=0, so every round start gets a separator gap
+      if (bi > 0 && roundStarts.has(gi2)) accumSepY += SC_SEP_H;
       barExtraY[bi] = accumSepY;
       gi2 += barGroups[bi].length;
     }
@@ -1954,8 +1959,7 @@ function renderStaff(animate) {
   const playOffset = isMidi ? midiPlayStart : (isScroll ? scPlayStart : 0);
 
   const midiHitAreas = []; // [{noteIdx, x, y}] for click-to-jump (MIDI only)
-  const sepsToDraw       = []; // [{y, meta, prevMeta}] full-row separators (col=0)
-  const inlineSepsToDraw = []; // [{x, y, meta, prevMeta}] mid-row separators (col>0)
+  const sepsToDraw   = []; // [{y, meta, prevMeta}] full-row separators
 
   let gi = 0;
   barGroups.forEach((barArr, bi) => {
@@ -1968,13 +1972,10 @@ function renderStaff(animate) {
     if (bi === 0 || isRoundFirstBar) { stave.addClef('treble'); }
     if (bi === 0) stave.addTimeSignature('4/4');
 
-    // Collect separator data before drawing — col=0: full-row separator; col>0: inline label
-    if (isRoundFirstBar && bi > 0 && col === 0) {
+    // Collect separator data before drawing — always a full-row separator since bpr=1
+    if (isRoundFirstBar && bi > 0) {
       const gim = roundMetaByGI.get(gi);
       sepsToDraw.push({ y: sy - SC_SEP_H * 0.5, meta: gim?.meta, prevMeta: gim?.prevMeta });
-    } else if (isRoundFirstBar && bi > 0 && col > 0) {
-      const gim = roundMetaByGI.get(gi);
-      inlineSepsToDraw.push({ x: sx, y: sy - 6, meta: gim?.meta, prevMeta: gim?.prevMeta });
     }
 
     stave.setContext(ctx).draw();
@@ -2057,7 +2058,7 @@ function renderStaff(animate) {
     svg.style.height = H + 'px';
 
     // ── Draw round-separator lines directly into the SVG ──
-    if (isScroll && (sepsToDraw.length || inlineSepsToDraw.length)) {
+    if (isScroll && sepsToDraw.length) {
       const NS = 'http://www.w3.org/2000/svg';
       for (const sep of sepsToDraw) {
         const line = document.createElementNS(NS, 'line');
@@ -2076,19 +2077,6 @@ function renderStaff(animate) {
         text.setAttribute('y', String(sep.y - 6));
         text.setAttribute('fill', SC_SEP_TEXT_CLR);
         text.setAttribute('font-size', '11');
-        text.setAttribute('font-family', 'sans-serif');
-        text.setAttribute('font-weight', 'bold');
-        text.textContent = lbl;
-        svg.appendChild(text);
-      }
-      // ── Inline labels for mid-row round starts (col > 0) ──
-      for (const sep of inlineSepsToDraw) {
-        const lbl = buildSepLabel(sep.meta, sep.prevMeta);
-        const text = document.createElementNS(NS, 'text');
-        text.setAttribute('x', String(sep.x + 2));
-        text.setAttribute('y', String(sep.y));
-        text.setAttribute('fill', SC_SEP_TEXT_CLR);
-        text.setAttribute('font-size', '10');
         text.setAttribute('font-family', 'sans-serif');
         text.setAttribute('font-weight', 'bold');
         text.textContent = lbl;
