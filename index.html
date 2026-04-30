@@ -350,6 +350,21 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
 .midi-upload-btn.err{border-color:var(--rd);color:var(--rd)}
 .midi-file-name{font-family:var(--mono);font-size:10px;color:var(--mut);
   flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+/* ── MIDI PLAYER BAR ── */
+.midi-bar{display:flex;align-items:center;gap:6px;padding:3px 12px 4px;
+  border-top:1px solid var(--b1);flex-shrink:0;flex-wrap:wrap;min-height:32px}
+.midi-nav-btn{background:none;border:1.5px solid var(--b1);border-radius:5px;
+  color:var(--mut);font-family:var(--mono);font-size:10px;padding:2px 8px;
+  cursor:pointer;transition:all .11s;flex-shrink:0;white-space:nowrap;line-height:1.4}
+.midi-nav-btn:hover{border-color:var(--b2);color:var(--fg)}
+.midi-nav-btn.on{border-color:var(--ac);color:var(--ac)}
+.midi-ch-lbl{font-family:var(--mono);font-size:9px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--mut);flex-shrink:0}
+.midi-pg{font-family:var(--mono);font-size:10px;color:var(--mut);
+  white-space:nowrap;min-width:26px;text-align:center}
+#staffDiv.midi-scroll{overflow-y:auto;align-items:flex-start;justify-content:flex-start;
+  padding-top:2px}
 </style>
 </head>
 <body>
@@ -541,6 +556,15 @@ body{background:var(--bg);color:var(--fg);font-family:var(--font);
       <span class="transp-badge" id="transpBadge" style="display:none"></span>
     </div>
     <div id="staffDiv"></div>
+    <!-- MIDI controls bar (only shown in MIDI mode) -->
+    <div class="midi-bar" id="midiBar" style="display:none">
+      <span class="midi-ch-lbl">CH</span>
+      <div id="midiChChips" class="chips" style="flex:1;gap:3px;min-width:0;flex-wrap:wrap"></div>
+      <button class="midi-nav-btn" id="midiOctDnBtn" title="Oktave tiefer">8↓</button>
+      <span class="midi-pg" id="midiOctLbl">0</span>
+      <button class="midi-nav-btn" id="midiOctUpBtn" title="Oktave höher">8↑</button>
+      <button class="midi-nav-btn" id="midiJumpBtn" title="Zur aktiven Note springen">⌖</button>
+    </div>
     <div class="bottom-bar">
       <div class="metro-wrap">
         <span class="metro-lbl">Metronom</span>
@@ -841,8 +865,9 @@ const cfg = {
   midiData: null,
   midiTrackIdx: -1,
   midiAllNotes: [],
-  midiSegStart: 0,
   midiTrackName: '',
+  midiOctaveShift: 0,
+  midiChannel: -1,
 };
 
 // ═══════════════════════════════════════════════════
@@ -1310,8 +1335,8 @@ updateLickStatus();
 // ═══════════════════════════════════════════════════
 // MIDI PARSER & PLAYBACK MODE
 // ═══════════════════════════════════════════════════
-const MIDI_SEG_SIZE = 8;
-let midiSegPage = 1, midiSegPages = 1;
+const MIDI_VIEW_SIZE = 16;   // notes per viewport page (used for play-preview slice)
+let midiPlayStart = 0;       // absolute note index where current play-preview started
 
 function parseMidi(buffer) {
   const dv = new DataView(buffer);
@@ -1358,26 +1383,31 @@ function parseMidi(buffer) {
   return { format, ppq, tracks };
 }
 
-function midiTrackNotes(events, ppq) {
+function midiTrackNotes(events, ppq, chFilter) {
   let name = '';
   const active = {};
   const raw = [];
+  const channels = new Set();
+  const chF = (chFilter === undefined || chFilter === null) ? -1 : chFilter;
   for (const ev of events) {
     if (ev.type === 'name') { name = ev.name; continue; }
     if (ev.ch === 9) continue; // skip drums (channel 10)
+    channels.add(ev.ch);
+    if (chF >= 0 && ev.ch !== chF) continue; // channel filter
     if (ev.type === 'on') {
-      active[ev.note] = ev.tick;
+      active[ev.note + '_' + ev.ch] = ev.tick;
     } else if (ev.type === 'off') {
-      if (ev.note in active) {
-        const durTicks = ev.tick - active[ev.note];
-        if (durTicks > 0) raw.push({ midiNote: ev.note, startTick: active[ev.note], durTicks });
-        delete active[ev.note];
+      const k = ev.note + '_' + ev.ch;
+      if (k in active) {
+        const durTicks = ev.tick - active[k];
+        if (durTicks > 0) raw.push({ midiNote: ev.note, startTick: active[k], durTicks, ch: ev.ch });
+        delete active[k];
       }
     }
   }
   const minTicks = Math.max(1, ppq / 4); // minimum 1/16 note
   raw.sort((a, b) => a.startTick - b.startTick || b.midiNote - a.midiNote);
-  // De-duplicate by startTick: keep highest pitch (melody heuristic)
+  // De-duplicate by startTick (per-channel to avoid wrongly merging channels)
   const deduped = [];
   let lastTick = -1;
   for (const n of raw) {
@@ -1386,7 +1416,8 @@ function midiTrackNotes(events, ppq) {
       lastTick = n.startTick;
     }
   }
-  return { name, notes: deduped };
+  const sortedCh = [...channels].sort((a, b) => a - b);
+  return { name, notes: deduped, channels: sortedCh };
 }
 
 const MIDI_DUR_MAP = [
@@ -1416,34 +1447,66 @@ function midiNotesToSeq(notes, ppq) {
   return notes.map(n => {
     const info = m2i(n.midiNote);
     const { dur, dots } = quantMidiDur(n.durTicks, ppq);
-    return { name: info.name, oct: info.oct, midi: n.midiNote, dur, dots, display: info.name };
+    return { name: info.name, oct: info.oct, midi: n.midiNote, ch: n.ch ?? 0, dur, dots, display: info.name };
   });
-}
-
-function buildMidiSeq() {
-  const all = cfg.midiAllNotes;
-  if (!all.length) return [];
-  const start = cfg.midiSegStart;
-  midiSegPages = Math.ceil(all.length / MIDI_SEG_SIZE);
-  midiSegPage  = Math.floor(start / MIDI_SEG_SIZE) + 1;
-  const seq = all.slice(start, start + MIDI_SEG_SIZE);
-  cfg.midiSegStart = (start + MIDI_SEG_SIZE >= all.length) ? 0 : start + MIDI_SEG_SIZE;
-  return seq;
 }
 
 function selectMidiTrack(idx) {
   cfg.midiTrackIdx = idx;
   const td = cfg.midiData;
   if (!td || !td.tracks[idx]) return;
-  const { name, notes } = midiTrackNotes(td.tracks[idx], td.ppq);
+  cfg.midiChannel = -1; // reset channel selection
+  const { name, notes, channels } = midiTrackNotes(td.tracks[idx], td.ppq);
   cfg.midiAllNotes  = midiNotesToSeq(notes, td.ppq);
-  cfg.midiSegStart  = 0;
   cfg.midiTrackName = name || ('Spur ' + (idx + 1));
   document.getElementById('midiTrackInfo').textContent =
     cfg.midiAllNotes.length + ' Töne · ' + cfg.midiTrackName;
   document.querySelectorAll('#midiTrackChips .chip').forEach(c =>
     c.classList.toggle('on', +c.dataset.idx === idx)
   );
+  // Build channel chips in player bar
+  buildMidiChChips(channels);
+}
+
+function buildMidiChChips(channels) {
+  const container = document.getElementById('midiChChips');
+  if (!container) return;
+  container.innerHTML = '';
+  if (channels.length <= 1) return; // single channel — no selector needed
+  const allC = document.createElement('div');
+  allC.className = 'chip' + (cfg.midiChannel === -1 ? ' on' : '');
+  allC.dataset.ch = '-1';
+  allC.textContent = 'Alle';
+  allC.addEventListener('click', () => selectMidiChannel(-1));
+  container.appendChild(allC);
+  channels.forEach(ch => {
+    const c = document.createElement('div');
+    c.className = 'chip' + (cfg.midiChannel === ch ? ' on' : '');
+    c.dataset.ch = ch;
+    c.textContent = 'Ch ' + (ch + 1);
+    c.addEventListener('click', () => selectMidiChannel(ch));
+    container.appendChild(c);
+  });
+}
+
+function selectMidiChannel(ch) {
+  cfg.midiChannel = ch;
+  const td = cfg.midiData;
+  if (!td || cfg.midiTrackIdx < 0) return;
+  const { notes } = midiTrackNotes(td.tracks[cfg.midiTrackIdx], td.ppq, ch === -1 ? undefined : ch);
+  cfg.midiAllNotes = midiNotesToSeq(notes, td.ppq);
+  document.getElementById('midiTrackInfo').textContent =
+    cfg.midiAllNotes.length + ' Töne · ' + cfg.midiTrackName;
+  document.querySelectorAll('#midiChChips .chip').forEach(c =>
+    c.classList.toggle('on', +c.dataset.ch === ch)
+  );
+  // If game is running in MIDI mode, update sequence and reset position
+  if (running && cfg.mode === 'midi') {
+    sequence = cfg.midiAllNotes;
+    seqIdx = 0;
+    seqAccuracy = [];
+    renderStaff(false); renderDots(); updateNH();
+  }
 }
 
 function buildMidiTrackChips(midiData) {
@@ -1451,6 +1514,9 @@ function buildMidiTrackChips(midiData) {
   container.innerHTML = '';
   cfg.midiAllNotes = [];
   cfg.midiTrackIdx = -1;
+  // Also clear channel chips
+  const chContainer = document.getElementById('midiChChips');
+  if (chContainer) chContainer.innerHTML = '';
   let anyTrack = false;
   midiData.tracks.forEach((events, i) => {
     const { name, notes } = midiTrackNotes(events, midiData.ppq);
@@ -1587,9 +1653,18 @@ function playSeq(seq) {
   });
   pbTOs.push(setTimeout(() => stopPB(), (t - ac.currentTime) * 1000 + 80));
 }
-document.getElementById('playBtn').addEventListener('click', () =>
-  isPlaying ? stopPB() : playSeq(sequence)
-);
+document.getElementById('playBtn').addEventListener('click', () => {
+  if (isPlaying) { stopPB(); return; }
+  if (cfg.mode === 'midi') {
+    // Play the viewport-sized slice around the current position
+    const pageStart = Math.floor(seqIdx / MIDI_VIEW_SIZE) * MIDI_VIEW_SIZE;
+    midiPlayStart = pageStart;
+    playSeq(sequence.slice(pageStart, pageStart + MIDI_VIEW_SIZE));
+  } else {
+    midiPlayStart = 0;
+    playSeq(sequence);
+  }
+});
 
 // ═══════════════════════════════════════════════════
 // VEXFLOW RENDERER
@@ -1625,18 +1700,20 @@ function renderStaff(animate) {
   div.innerHTML = '';
   if (animate) { div.classList.remove('pa'); void div.offsetWidth; div.classList.add('pa'); }
 
+  const isMidi = cfg.mode === 'midi';
+  div.classList.toggle('midi-scroll', isMidi);
+
   const card = document.getElementById('staffCard');
   const W = Math.max(200, card.clientWidth * 0.97);
-  const H = Math.max(90,  card.clientHeight - 70);
 
-  const renderer = new Renderer(div, Renderer.Backends.SVG);
-  renderer.resize(W, H);
-  const ctx = renderer.getContext();
+  // For MIDI: render full sequence in scrollable staff; for others: fit card height
+  const MIDI_ROW_H = 110;
+  const renderNotes = sequence; // always full sequence
 
   // Group notes into 4-beat bars
   const barGroups = [];
   let curBar = [], curB = 0;
-  for (const note of sequence) {
+  for (const note of renderNotes) {
     const b = nb(note);
     if (curB + b > 4.005 && curBar.length) { barGroups.push(curBar); curBar = []; curB = 0; }
     curBar.push(note); curB += b;
@@ -1647,7 +1724,21 @@ function renderStaff(animate) {
   const bpr     = numBars <= 2 ? numBars : (W < 400 ? 1 : 2);
   const rows    = Math.ceil(numBars / bpr);
   const barW    = (W - 18) / bpr;
-  const rowH    = H / rows;
+
+  let H, rowH;
+  if (isMidi) {
+    rowH = MIDI_ROW_H;
+    H = Math.max(MIDI_ROW_H, rows * MIDI_ROW_H);
+  } else {
+    H    = Math.max(90, card.clientHeight - 70);
+    rowH = H / rows;
+  }
+
+  const renderer = new Renderer(div, Renderer.Backends.SVG);
+  renderer.resize(W, H);
+  const ctx = renderer.getContext();
+
+  const midiHitAreas = []; // [{noteIdx, x, y}] for click-to-jump
 
   let gi = 0;
   barGroups.forEach((barArr, bi) => {
@@ -1662,21 +1753,30 @@ function renderStaff(animate) {
     // Track accidentals used in this bar to avoid redundant display
     const barAccidentals = {};
     const vfNotes = barArr.map((n, li) => {
-      const g = gi + li;
+      const g = gi + li; // global note index
       let color = null;
-      if (isPlaying && g === pbHiIdx) color = C_PLAY;
-      else if (g === seqIdx)           color = C_ACTIVE;
-      else if (g < seqIdx)             color = C_DONE;
+      if (isMidi) {
+        // pbHiIdx is relative to the play-preview slice (midiPlayStart offset)
+        if (isPlaying && (g - midiPlayStart) === pbHiIdx) color = C_PLAY;
+        else if (g === seqIdx)                              color = C_ACTIVE;
+        else if (g < seqIdx)                               color = C_DONE;
+      } else {
+        if (isPlaying && g === pbHiIdx) color = C_PLAY;
+        else if (g === seqIdx)          color = C_ACTIVE;
+        else if (g < seqIdx)            color = C_DONE;
+      }
 
       const { StaveNote, Dot, Accidental } = Vex.Flow;
       // Display concert-pitch notes; mic matching handles transposition
       const letter = n.name[0].toLowerCase();
       const acc    = n.name.slice(1);
-      const key    = letter + acc + '/' + n.oct;
+      // Apply octave shift for MIDI display only
+      const oct    = n.oct + (isMidi ? cfg.midiOctaveShift : 0);
+      const key    = letter + acc + '/' + oct;
       const sn     = new StaveNote({ keys:[key], duration:n.dur, clef:'treble' });
       if (n.dots === 1) Dot.buildAndAttach([sn], { all:true });
       if (acc) {
-        const pitchKey = n.name + n.oct;
+        const pitchKey = n.name + oct;
         if (!barAccidentals[pitchKey]) {
           barAccidentals[pitchKey] = true;
           try { sn.addModifier(new Accidental(acc)); } catch(e) {}
@@ -1702,6 +1802,13 @@ function renderStaff(animate) {
     try { new Formatter().joinVoices([voice]).format([voice], barW - 70); } catch(e) {}
     voice.draw(ctx, stave);
 
+    // Collect note positions for MIDI click-to-jump (after draw so absoluteX is available)
+    if (isMidi) {
+      vfNotes.forEach((sn, li) => {
+        try { midiHitAreas.push({ noteIdx: gi + li, x: sn.getAbsoluteX(), y: sy + rowH * 0.4 }); } catch(e) {}
+      });
+    }
+
     // Beams for eighth/sixteenth notes
     const beamable = vfNotes.filter(sn =>
       sn.getDuration() === '8' || sn.getDuration() === '16'
@@ -1721,6 +1828,40 @@ function renderStaff(animate) {
     svg.style.filter = 'invert(1)';
     svg.style.width  = W + 'px';
     svg.style.height = H + 'px';
+
+    if (isMidi) {
+      // ── Click-to-jump handler ──
+      svg.style.cursor = 'pointer';
+      svg.addEventListener('click', e => {
+        const rect = svg.getBoundingClientRect();
+        const cx = e.clientX - rect.left;
+        const cy = e.clientY - rect.top;
+        let closest = -1, minDist = Infinity;
+        for (const { noteIdx, x, y } of midiHitAreas) {
+          const dist = Math.hypot(x - cx, y - cy);
+          if (dist < minDist) { minDist = dist; closest = noteIdx; }
+        }
+        if (closest >= 0 && minDist < 80) {
+          seqIdx = Math.max(0, Math.min(sequence.length - 1, closest));
+          renderStaff(false); renderDots(); updateNH();
+        }
+      });
+
+      // ── Auto-scroll to keep active note visible ──
+      if (seqIdx >= 0 && seqIdx < sequence.length && barGroups.length) {
+        let count = 0, activeRow = 0;
+        for (let bi = 0; bi < barGroups.length; bi++) {
+          if (count + barGroups[bi].length > seqIdx) {
+            activeRow = Math.floor(bi / bpr);
+            break;
+          }
+          count += barGroups[bi].length;
+        }
+        const noteY = activeRow * MIDI_ROW_H;
+        const target = noteY - div.clientHeight / 3;
+        div.scrollTop = Math.max(0, target);
+      }
+    }
   }
 }
 
@@ -1728,6 +1869,30 @@ function renderStaff(animate) {
 function renderDots() {
   const el = document.getElementById('ndots');
   el.innerHTML = '';
+  if (cfg.mode === 'midi') {
+    // In MIDI mode show a mini progress bar (dots represent notes around current position)
+    const total = sequence.length;
+    const max = Math.min(total, 28);
+    // Show a window of 28 dots centred on seqIdx
+    const winStart = Math.max(0, Math.min(seqIdx - 14, total - max));
+    for (let ii = 0; ii < max; ii++) {
+      const i = winStart + ii;
+      const d = document.createElement('div');
+      let cls = 'nd';
+      if (isPlaying && (i - midiPlayStart) === pbHiIdx) cls += ' playhi';
+      else if (i < seqIdx) {
+        cls += ' done';
+        if (seqAccuracy[i] !== undefined) {
+          const col = accuracyColor(seqAccuracy[i]);
+          d.style.background  = col;
+          d.style.borderColor = col;
+        }
+      } else if (i === seqIdx) cls += ' active';
+      d.className = cls;
+      el.appendChild(d);
+    }
+    return;
+  }
   const max = Math.min(sequence.length, 28);
   for (let i = 0; i < max; i++) {
     const d = document.createElement('div');
@@ -1974,7 +2139,17 @@ function onNote(name, oct, midi) {
     if (seqIdx >= sequence.length) {
       card.classList.add('fg');
       clearTimeout(flashTO);
-      flashTO = setTimeout(() => { card.classList.remove('fg'); startRound(); }, 420);
+      if (cfg.mode === 'midi') {
+        // Loop: reset to beginning of MIDI sequence
+        flashTO = setTimeout(() => {
+          card.classList.remove('fg');
+          seqIdx = 0;
+          seqAccuracy = [];
+          renderStaff(true); renderDots(); updateNH();
+        }, 420);
+      } else {
+        flashTO = setTimeout(() => { card.classList.remove('fg'); startRound(); }, 420);
+      }
     } else {
       renderStaff(false); renderDots();
     }
@@ -2007,7 +2182,7 @@ function startRound() {
     sequence = buildScaleSeq();
   } else if (cfg.mode === 'midi') {
     if (!cfg.midiAllNotes.length) return;
-    sequence = buildMidiSeq();
+    sequence = cfg.midiAllNotes; // full sequence; seqIdx continues from current position
   } else {
     // Lick mode with repetitions
     if (curLick === null || lickRepsDone >= cfg.lickReps) {
@@ -2034,7 +2209,8 @@ function startRound() {
     document.getElementById('dirBadge').style.display = 'none';
     const pb = document.getElementById('poolBadge');
     pb.style.display = '';
-    pb.textContent = 'Seite ' + midiSegPage + '/' + midiSegPages;
+    const chInfo = cfg.midiChannel >= 0 ? ' · Ch ' + (cfg.midiChannel + 1) : '';
+    pb.textContent = sequence.length + ' Töne' + chInfo;
   } else {
     const lbl = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
     document.getElementById('ibMode').textContent = cfg.mode === 'scale' ? 'TONLEITER' : 'LICK';
@@ -2144,10 +2320,17 @@ function startGame() {
     lickRotator.buildPool(); lickRotator.played.clear();
   }
   if (cfg.mode === 'midi') {
-    cfg.midiSegStart = 0;
+    // Reset MIDI state for a fresh start
+    seqIdx = 0;
+    seqAccuracy = [];
+    midiPlayStart = 0;
+    cfg.midiOctaveShift = 0;
+    updateMidiOctLbl();
   }
   document.getElementById('overlay').classList.add('hidden');
   document.getElementById('backBtn').style.display = 'flex';
+  // Show/hide MIDI controls bar
+  document.getElementById('midiBar').style.display = cfg.mode === 'midi' ? '' : 'none';
   const lbl = SCALES.find(s => s.id === cfg.scale)?.lbl || cfg.scale;
   const tbBadgeText = cfg.mode === 'midi' ? (cfg.midiTrackName || 'MIDI') : cfg.root + ' ' + lbl;
   document.getElementById('tbBadge').textContent = tbBadgeText;
@@ -2184,6 +2367,7 @@ document.getElementById('startBtn').addEventListener('click', () => {
 document.getElementById('setBtn').addEventListener('click', () => {
   running = false; stopPB(); stopMetro();
   document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('midiBar').style.display = 'none';
   document.getElementById('startBtn').textContent = 'Neu starten';
   updateLickStatus();
 });
@@ -2191,6 +2375,7 @@ document.getElementById('backBtn').addEventListener('click', () => {
   running = false; stopPB(); stopMetro();
   document.getElementById('backBtn').style.display = 'none';
   document.getElementById('overlay').classList.remove('hidden');
+  document.getElementById('midiBar').style.display = 'none';
   document.getElementById('startBtn').textContent = 'Neu starten';
   updateLickStatus();
 });
@@ -2200,6 +2385,32 @@ document.addEventListener('keydown', e => {
   if (!running || e.code !== 'Space') return;
   e.preventDefault();
   const n = sequence[seqIdx]; if (n) onNote(n.name, n.oct, n.midi);
+});
+
+// ═══════════════════════════════════════════════════
+// MIDI PLAYER CONTROLS
+// ═══════════════════════════════════════════════════
+function updateMidiOctLbl() {
+  const lbl = document.getElementById('midiOctLbl');
+  if (!lbl) return;
+  const s = cfg.midiOctaveShift;
+  lbl.textContent = s === 0 ? '0' : (s > 0 ? '+' + s : '' + s);
+}
+
+document.getElementById('midiOctDnBtn').addEventListener('click', () => {
+  cfg.midiOctaveShift = Math.max(-2, cfg.midiOctaveShift - 1);
+  updateMidiOctLbl();
+  if (running && cfg.mode === 'midi') renderStaff(false);
+});
+document.getElementById('midiOctUpBtn').addEventListener('click', () => {
+  cfg.midiOctaveShift = Math.min(2, cfg.midiOctaveShift + 1);
+  updateMidiOctLbl();
+  if (running && cfg.mode === 'midi') renderStaff(false);
+});
+document.getElementById('midiJumpBtn').addEventListener('click', () => {
+  if (cfg.mode === 'midi' && sequence.length) {
+    renderStaff(false); // re-render triggers auto-scroll to seqIdx
+  }
 });
 
 // ═══════════════════════════════════════════════════
