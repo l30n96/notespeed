@@ -1855,14 +1855,16 @@ function buildSepLabel(meta, prevMeta) {
     const name = meta.root + ' ' + scaleLbl;
     const isRepeat = prevMeta && prevMeta.mode === 'scale' &&
                      prevMeta.root === meta.root && prevMeta.scale === meta.scale;
-    return isRepeat ? '↺  Wiederholung  —  ' + name : '▶  ' + name;
+    return isRepeat ? `↺  Wiederholung  —  ${name}` : `▶  ${name}`;
   }
   // lick mode
   const isRepeat = prevMeta && prevMeta.mode === 'lick' && prevMeta.lick === meta.lick;
   return isRepeat ? '↺  Wiederholung' : '▶  Lick';
 }
 
-const SC_SEP_H = 34; // extra vertical gap (px) inserted before each round-separator row
+const SC_SEP_H        = 34;       // extra vertical gap (px) inserted before each round-separator row
+const SC_SEP_LINE_CLR = '#3a3a3a'; // separator line colour (dark; inverts to light gray on dark bg)
+const SC_SEP_TEXT_CLR = '#2a2a2a'; // separator label colour (dark; inverts to near-white)
 
 function renderStaff(animate) {
   const { Renderer, Stave, Voice, Formatter, Beam } = Vex.Flow;
@@ -2041,7 +2043,7 @@ function renderStaff(animate) {
         line.setAttribute('y1', String(sep.y));
         line.setAttribute('x2', String(W - 9));
         line.setAttribute('y2', String(sep.y));
-        line.setAttribute('stroke', '#3a3a3a');
+        line.setAttribute('stroke', SC_SEP_LINE_CLR);
         line.setAttribute('stroke-width', '1.5');
         line.setAttribute('stroke-dasharray', '7 4');
         svg.appendChild(line);
@@ -2050,7 +2052,7 @@ function renderStaff(animate) {
         const text = document.createElementNS(NS, 'text');
         text.setAttribute('x', '13');
         text.setAttribute('y', String(sep.y - 6));
-        text.setAttribute('fill', '#2a2a2a');
+        text.setAttribute('fill', SC_SEP_TEXT_CLR);
         text.setAttribute('font-size', '11');
         text.setAttribute('font-family', 'sans-serif');
         text.setAttribute('font-weight', 'bold');
