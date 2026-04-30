@@ -1667,10 +1667,9 @@ function playSeq(seq) {
 document.getElementById('playBtn').addEventListener('click', () => {
   if (isPlaying) { stopPB(); return; }
   if (cfg.mode === 'midi') {
-    // Play the viewport-sized slice around the current position
-    const pageStart = Math.floor(seqIdx / MIDI_VIEW_SIZE) * MIDI_VIEW_SIZE;
-    midiPlayStart = pageStart;
-    playSeq(sequence.slice(pageStart, pageStart + MIDI_VIEW_SIZE));
+    // Play the full sequence from the beginning
+    midiPlayStart = 0;
+    playSeq(sequence);
   } else if (scRounds.length > 0) {
     // Scale/lick scroll mode: play notes of the current round only
     const rStart = scOffsets[scCur] || 0;
@@ -1849,6 +1848,24 @@ function initScrollMode() {
   renderStaff(true); renderDots(); updateNH();
 }
 
+function buildSepLabel(meta, prevMeta) {
+  if (!meta) return '▶';
+  const scaleLbl = SCALES.find(s => s.id === meta.scale)?.lbl || meta.scale;
+  if (meta.mode === 'scale') {
+    const name = meta.root + ' ' + scaleLbl;
+    const isRepeat = prevMeta && prevMeta.mode === 'scale' &&
+                     prevMeta.root === meta.root && prevMeta.scale === meta.scale;
+    return isRepeat ? `↺  Wiederholung  —  ${name}` : `▶  ${name}`;
+  }
+  // lick mode
+  const isRepeat = prevMeta && prevMeta.mode === 'lick' && prevMeta.lick === meta.lick;
+  return isRepeat ? '↺  Wiederholung' : '▶  Lick';
+}
+
+const SC_SEP_H        = 34;       // extra vertical gap (px) inserted before each round-separator row
+const SC_SEP_LINE_CLR = '#3a3a3a'; // separator line colour (dark; inverts to light gray on dark bg)
+const SC_SEP_TEXT_CLR = '#2a2a2a'; // separator label colour (dark; inverts to near-white)
+
 function renderStaff(animate) {
   const { Renderer, Stave, Voice, Formatter, Beam } = Vex.Flow;
   const div = document.getElementById('staffDiv');
@@ -1879,10 +1896,33 @@ function renderStaff(animate) {
   const rows    = Math.ceil(numBars / bpr);
   const barW    = (W - 18) / bpr;
 
+  // Set of global note indices where a new round starts (for clef markers + separators)
+  const roundStarts = isScroll ? new Set(scOffsets.slice(1)) : new Set();
+
+  // Map from global note index → {meta, prevMeta} for separator labels
+  const roundMetaByGI = new Map();
+  if (isScroll) {
+    scOffsets.forEach((off, r) => {
+      if (r > 0) roundMetaByGI.set(off, { meta: scRounds[r]?.meta, prevMeta: scRounds[r - 1]?.meta });
+    });
+  }
+
+  // Per-bar extra Y offset due to separator gaps (only inserted at col=0 round starts)
+  const barExtraY = new Array(barGroups.length).fill(0);
+  let accumSepY = 0;
+  if (isScroll) {
+    let gi2 = 0;
+    for (let bi = 0; bi < barGroups.length; bi++) {
+      if (bi > 0 && roundStarts.has(gi2) && (bi % bpr) === 0) accumSepY += SC_SEP_H;
+      barExtraY[bi] = accumSepY;
+      gi2 += barGroups[bi].length;
+    }
+  }
+
   let H, rowH;
   if (useScroll) {
     rowH = SC_ROW_H;
-    H = Math.max(SC_ROW_H, rows * SC_ROW_H);
+    H = Math.max(SC_ROW_H, rows * SC_ROW_H + accumSepY);
   } else {
     H    = Math.max(90, card.clientHeight - 70);
     rowH = H / rows;
@@ -1894,21 +1934,27 @@ function renderStaff(animate) {
 
   // Playback highlight offset: notes are indexed from this offset for pbHiIdx
   const playOffset = isMidi ? midiPlayStart : (isScroll ? scPlayStart : 0);
-  // Set of global note indices where a new round starts (for clef markers)
-  const roundStarts = isScroll ? new Set(scOffsets.slice(1)) : new Set();
 
   const midiHitAreas = []; // [{noteIdx, x, y}] for click-to-jump (MIDI only)
+  const sepsToDraw   = []; // [{y, meta, prevMeta}] collected during bar loop
 
   let gi = 0;
   barGroups.forEach((barArr, bi) => {
     const row = Math.floor(bi / bpr), col = bi % bpr;
     const sx  = 9 + col * barW;
-    const sy  = row * rowH + rowH * 0.16;
+    const sy  = row * rowH + rowH * 0.16 + barExtraY[bi];
 
     const stave = new Stave(sx, sy, barW - 5);
     const isRoundFirstBar = roundStarts.has(gi);
     if (bi === 0 || isRoundFirstBar) { stave.addClef('treble'); }
     if (bi === 0) stave.addTimeSignature('4/4');
+
+    // Collect separator data before drawing (col=0 round starts only, not the very first bar)
+    if (isRoundFirstBar && bi > 0 && col === 0) {
+      const gim = roundMetaByGI.get(gi);
+      sepsToDraw.push({ y: sy - SC_SEP_H * 0.5, meta: gim?.meta, prevMeta: gim?.prevMeta });
+    }
+
     stave.setContext(ctx).draw();
 
     // Track accidentals used in this bar to avoid redundant display
@@ -1988,18 +2034,43 @@ function renderStaff(animate) {
     svg.style.width  = W + 'px';
     svg.style.height = H + 'px';
 
+    // ── Draw round-separator lines directly into the SVG ──
+    if (isScroll && sepsToDraw.length) {
+      const NS = 'http://www.w3.org/2000/svg';
+      for (const sep of sepsToDraw) {
+        const line = document.createElementNS(NS, 'line');
+        line.setAttribute('x1', '9');
+        line.setAttribute('y1', String(sep.y));
+        line.setAttribute('x2', String(W - 9));
+        line.setAttribute('y2', String(sep.y));
+        line.setAttribute('stroke', SC_SEP_LINE_CLR);
+        line.setAttribute('stroke-width', '1.5');
+        line.setAttribute('stroke-dasharray', '7 4');
+        svg.appendChild(line);
+
+        const lbl = buildSepLabel(sep.meta, sep.prevMeta);
+        const text = document.createElementNS(NS, 'text');
+        text.setAttribute('x', '13');
+        text.setAttribute('y', String(sep.y - 6));
+        text.setAttribute('fill', SC_SEP_TEXT_CLR);
+        text.setAttribute('font-size', '11');
+        text.setAttribute('font-family', 'sans-serif');
+        text.setAttribute('font-weight', 'bold');
+        text.textContent = lbl;
+        svg.appendChild(text);
+      }
+    }
+
     if (useScroll) {
       // ── Auto-scroll to keep active note visible ──
       if (seqIdx >= 0 && seqIdx < sequence.length && barGroups.length) {
-        let count = 0, activeRow = 0;
+        let count = 0, activeBar = 0;
         for (let bi = 0; bi < barGroups.length; bi++) {
-          if (count + barGroups[bi].length > seqIdx) {
-            activeRow = Math.floor(bi / bpr);
-            break;
-          }
+          if (count + barGroups[bi].length > seqIdx) { activeBar = bi; break; }
           count += barGroups[bi].length;
         }
-        const noteY = activeRow * SC_ROW_H;
+        const activeRow = Math.floor(activeBar / bpr);
+        const noteY = activeRow * SC_ROW_H + barExtraY[activeBar];
         const target = noteY - div.clientHeight / 3;
         div.scrollTop = Math.max(0, target);
       }
